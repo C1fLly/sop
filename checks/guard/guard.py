@@ -70,8 +70,10 @@ def main():
                 new = json.loads(g('show', 'refs/sop/prhead:sop.json'))
                 tk = TOOLKIT
                 if new.get('toolkit', {}).get('version') != sop.get('toolkit', {}).get('version'):
-                    tk = fetch_toolkit(new['toolkit']['repo'], new['toolkit']['version'], tempfile.mkdtemp(prefix='sop-tk-'))
-                pats += core.patterns_for(tk, new)
+                    with tempfile.TemporaryDirectory(prefix='sop-tk-') as td:
+                        pats += core.patterns_for(fetch_toolkit(new['toolkit']['repo'], new['toolkit']['version'], td), new)
+                else:
+                    pats += core.patterns_for(tk, new)
                 print('PR 改了 sop.json 且有放行：并入新声明的清单')
     bad, ok = core.evaluate('.git', 'refs/sop/base', 'refs/sop/prhead', pats, best, chg=chg)
     for o in ok:

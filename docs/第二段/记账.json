@@ -1,0 +1,14 @@
+{
+ "carried_from_phase1": 21.17,
+ "entries": [
+  {
+   "what": "第二段验收：被忽略的 .claude/settings.local.json",
+   "tool": "claude 2.1.327",
+   "cost": 0.115237,
+   "basis": "工具报告",
+   "secs": 18,
+   "rc": 0,
+   "date": "2026-11-18"
+  }
+ ]
+}

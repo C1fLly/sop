@@ -1,0 +1,17 @@
+# wt-template: 1
+# ignore-ok：wt done / wt rm 删除目录前，这些「被 Git 忽略的文件」视为预期内，不再询问。
+# 一行一个，支持通配符；按文件名或相对路径匹配。# 后面是注释。
+#
+# wt 已内置常见的依赖和构建产物（node_modules、.venv、dist、build、target、.next、__pycache__ 等）、
+# 系统和编辑器的临时文件（.DS_Store、*.swp 等）、日志（logs、*.log），
+# 以及指向 .shared/ 的软链接（.env 等），不用写在这里。
+#
+# 编辑器配置目录（.idea、.vscode）没有内置：里面可能有手写的调试和运行配置。确认不需要再写进来。
+#
+# 只写「确定可以随目录一起删掉」的东西。笔记、本地数据库、真实配置文件不要写进来，应该放进 .shared/。
+#
+# 例：
+# .idea
+# .vscode
+# tmp
+# bin        （.NET / Go 的构建产物；没有内置，因为很多项目在 bin/ 里放手写脚本）

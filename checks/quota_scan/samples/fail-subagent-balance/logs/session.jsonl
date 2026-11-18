@@ -1,0 +1,3 @@
+{"type":"user","message":{"content":[{"type":"tool_result","content":"Agent failed: API Error: 403 {\"error\":{\"type\":\"forbidden\",\"message\":\"insufficient balance\"}}"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"帮手断了，我自己接着做。"}]}}
+{"type":"result","subtype":"success","total_cost_usd":1.2}

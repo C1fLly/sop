@@ -18,7 +18,7 @@ action = "grill"
 skill = "grill-with-docs"
 session = "plan-chat"
 allowed = ["GLOSSARY.md", "docs/adr/**", "{fdir}/**"]
-checks = ["handoff_exists"]
+checks = ["handoff_exists:handoff-plan.md"]
 
 [[step]]
 id = "F3"
@@ -60,7 +60,7 @@ action = "spec"
 skill = "to-spec"
 session = "plan-chat"
 allowed = ["{fdir}/spec.md"]
-checks = ["spec_format"]
+checks = ["plan_check:spec"]
 
 [[step]]
 id = "F6"
@@ -71,7 +71,7 @@ action = "tickets"
 skill = "to-tickets"
 session = "plan-chat"
 allowed = ["{fdir}/issues/**"]
-checks = ["ticket_format"]
+checks = ["plan_check"]
 
 [[step]]
 id = "F7"

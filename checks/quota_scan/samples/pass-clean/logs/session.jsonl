@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"content":[{"type":"text","text":"测试 30 个，全部通过。限流（rate limiting）的中间件已经写好。"}]}}
+{"type":"result","subtype":"success","total_cost_usd":0.42}

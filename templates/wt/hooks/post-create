@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# 工具包自己的模板：准备脚本只链接 .env，不安装依赖、不运行任何项目代码。
+set -euo pipefail
+[ -e "$WT_ROOT/.shared/.env" ] && ln -sfn "../.shared/.env" .env || true
+echo "post-create（工具包模板）：只链接 .env" >&2

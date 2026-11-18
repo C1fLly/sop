@@ -1,0 +1,14 @@
+# 工具包这个版本规定的受保护路径（设计书 5.6）。档案的规范文件另由各档案的 protected.txt 列。
+# 写法：以 / 开头只认根目录；不带 / 的在任何层级的文件名上都算；** 表示任意层级。
+/sop.json
+.github/workflows/**
+**/AGENTS*.md
+**/CLAUDE*.md
+**/.claude/**
+**/.agents/**
+**/.codex/**
+**/.opencode/**
+**/.pi/**
+docs/agents/**
+docs/standards/**
+docs/baseline/**

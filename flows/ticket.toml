@@ -1,0 +1,142 @@
+# 工单流程（设计书 7.5，流程命令编排的路径）。范围：ticket/<功能>/<编号>。
+[flow]
+id = "ticket"
+scope = "ticket"
+
+[[step]]
+id = "T1"
+name = "开工单目录"
+actor = "script"
+action = "ticket.open"
+
+[[step]]
+id = "T2"
+name = "拼任务包"
+actor = "script"
+action = "ticket.taskpack"
+
+[[step]]
+id = "T3"
+name = "实现"
+actor = "ai_headless"
+kind = "ticket_impl"
+action = "implement"
+skill = "implement"
+session = "new"
+allowed = ["**"]
+
+[[step]]
+id = "T4"
+name = "结果校验"
+actor = "script"
+action = "ticket.verify"
+on_fail = "T6"
+
+[[step]]
+id = "T5"
+name = "工单门禁"
+actor = "restricted_script"
+kind = "restricted_script"
+action = "gate-fast"
+on_fail = "T6"
+
+[[step]]
+id = "T9"
+name = "工单复查"
+actor = "ai_headless"
+kind = "readonly"
+action = "ticket_review"
+skill = "code-review"
+session = "new"
+condition = "ticket.risky"
+on_fail = "T6"
+max_fails = 2
+on_fails_exhausted = "T8"
+
+[[step]]
+id = "T10"
+name = "开工单 PR 并看冲突"
+actor = "script"
+action = "ticket.open_pr"
+
+[[step]]
+id = "T11"
+name = "行为验收"
+actor = "human"
+action = "accept.ticket"
+confirm = true
+condition = "ticket.per_ticket_accept"
+on_fail = "T6"
+
+[[step]]
+id = "T12"
+name = "等 GitHub 检查"
+actor = "script"
+action = "ticket.wait_checks"
+on_fail = "T6"
+
+[[step]]
+id = "T13"
+name = "合并工单 PR"
+actor = "script"
+action = "ticket.merge"
+
+[[step]]
+id = "T15"
+name = "清理"
+actor = "script"
+action = "ticket.cleanup"
+
+# ---- 不在主线上的几步 ----
+[[step]]
+id = "T6"
+name = "修复"
+actor = "ai_headless"
+kind = "ticket_impl"
+action = "fix"
+skill = "implement"
+session = "new"
+side = true
+goto = "T4"
+max_attempts = 3
+on_exhausted = "T7"
+changes_confirmed = true
+allowed = ["**"]
+
+[[step]]
+id = "T7"
+name = "深入诊断"
+actor = "ai_headless"
+kind = "ticket_impl"
+action = "diagnose"
+skill = "diagnosing-bugs"
+session = "new"
+side = true
+goto = "T4"
+max_attempts = 1
+on_exhausted = "T8"
+changes_confirmed = true
+allowed = ["**"]
+
+[[step]]
+id = "T8"
+name = "技术决策"
+actor = "ai_headless"
+kind = "planning"
+action = "decide"
+session = "new"
+side = true
+hold = true
+allowed = ["docs/adr/**"]
+
+[[step]]
+id = "T14"
+name = "解决冲突"
+actor = "ai_headless"
+kind = "ticket_impl"
+action = "resolve_conflict"
+session = "new"
+side = true
+goto = "T4"
+changes_confirmed = true
+allowed = ["**"]

@@ -1,0 +1,231 @@
+# 功能流程（设计书 7.4）。范围：feature/<功能>。{feature} 是功能名（带序号），{fdir} 是 .scratch/<功能>。
+[flow]
+id = "feature"
+scope = "feature"
+
+[[step]]
+id = "F1"
+name = "开轮"
+actor = "script"
+action = "feature.open"
+
+[[step]]
+id = "F2"
+name = "追问"
+actor = "ai_interactive"
+kind = "planning"
+action = "grill"
+skill = "grill-with-docs"
+session = "plan-chat"
+allowed = ["GLOSSARY.md", "docs/adr/**", "{fdir}/**"]
+checks = ["handoff_exists"]
+
+[[step]]
+id = "F3"
+name = "页面原型"
+actor = "ai_headless"
+kind = "planning"
+action = "prototype"
+session = "proto"
+condition = "feature.has_new_pages"
+changes_confirmed = true
+allowed = ["apps/**", "{fdir}/**"]
+
+[[step]]
+id = "F4"
+name = "原型确认"
+actor = "human"
+action = "confirm.prototype"
+confirm = true
+condition = "feature.has_new_pages"
+on_fail = "F3"
+
+[[step]]
+id = "F4a"
+name = "原型交接"
+actor = "ai_headless"
+kind = "planning"
+action = "handoff"
+skill = "handoff"
+session = "proto"
+condition = "feature.has_new_pages"
+allowed = ["{fdir}/**"]
+
+[[step]]
+id = "F5"
+name = "规格"
+actor = "ai_interactive"
+kind = "planning"
+action = "spec"
+skill = "to-spec"
+session = "plan-chat"
+allowed = ["{fdir}/spec.md"]
+checks = ["spec_format"]
+
+[[step]]
+id = "F6"
+name = "工单"
+actor = "ai_interactive"
+kind = "planning"
+action = "tickets"
+skill = "to-tickets"
+session = "plan-chat"
+allowed = ["{fdir}/issues/**"]
+checks = ["ticket_format"]
+
+[[step]]
+id = "F7"
+name = "规划校验"
+actor = "script"
+action = "feature.plan_check"
+on_fail = "F7fix"
+
+[[step]]
+id = "F7fix"
+name = "按校验报告改工单"
+actor = "ai_headless"
+kind = "planning"
+action = "plan_fix"
+session = "new"
+side = true
+goto = "F7"
+max_attempts = 2
+on_exhausted = "STOP"
+allowed = ["{fdir}/spec.md", "{fdir}/issues/**"]
+
+[[step]]
+id = "F8"
+name = "验收包"
+actor = "ai_headless"
+kind = "planning"
+action = "cards"
+session = "new"
+allowed = ["{fdir}/cards/**", "{fdir}/summary.md"]
+checks = ["cards_cover"]
+
+[[step]]
+id = "F9"
+name = "规划复查"
+actor = "ai_headless"
+kind = "readonly"
+action = "plan_review"
+session = "new"
+on_fail = "F9fix"
+max_fails = 2
+on_fails_exhausted = "STOP"
+
+[[step]]
+id = "F9fix"
+name = "按复查结果改规划"
+actor = "ai_headless"
+kind = "planning"
+action = "plan_fix"
+session = "new"
+side = true
+goto = "F7"
+allowed = ["{fdir}/spec.md", "{fdir}/issues/**", "{fdir}/cards/**", "{fdir}/summary.md"]
+
+[[step]]
+id = "F10"
+name = "确认规划"
+actor = "human"
+action = "confirm.plan"
+confirm = true
+
+[[step]]
+id = "F11"
+name = "规划定稿"
+actor = "script"
+action = "feature.freeze_plan"
+
+[[step]]
+id = "F12"
+name = "开功能 PR"
+actor = "script"
+action = "feature.open_pr"
+
+[[step]]
+id = "F13"
+name = "选实现方式"
+actor = "human"
+action = "confirm.impl_mode"
+confirm = true
+
+[[step]]
+id = "F14"
+name = "实现"
+actor = "script"
+action = "feature.implement"
+
+[[step]]
+id = "F15"
+name = "功能门禁"
+actor = "restricted_script"
+kind = "restricted_script"
+action = "gate-full"
+on_fail = "F14fix"
+
+[[step]]
+id = "F16"
+name = "功能复查"
+actor = "ai_headless"
+kind = "readonly"
+action = "feature_review"
+skill = "code-review"
+session = "new"
+on_fail = "F14fix"
+
+[[step]]
+id = "F17"
+name = "行为验收"
+actor = "human"
+action = "accept.feature"
+confirm = true
+on_fail = "F14fix"
+
+[[step]]
+id = "F14fix"
+name = "生成修复工单"
+actor = "script"
+action = "feature.fix_ticket"
+side = true
+goto = "F14"
+
+[[step]]
+id = "F18"
+name = "功能 PR 转正式"
+actor = "script"
+action = "feature.ready"
+
+[[step]]
+id = "F19"
+name = "等 GitHub 检查"
+actor = "script"
+action = "feature.wait_checks"
+
+[[step]]
+id = "F20"
+name = "合并到主线"
+actor = "script"
+action = "feature.merge"
+
+[[step]]
+id = "F21"
+name = "清理"
+actor = "script"
+action = "feature.cleanup"
+
+[[step]]
+id = "F22"
+name = "复盘"
+actor = "ai_headless"
+kind = "readonly"
+action = "retro"
+skill = "retro"
+session = "new"
+
+[[step]]
+id = "F23"
+name = "记录指标"
+actor = "script"
+action = "feature.metrics"

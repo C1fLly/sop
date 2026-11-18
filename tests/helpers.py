@@ -57,3 +57,21 @@ def py(code_or_file, *args, env=None, check=True):
     """另起一个 Python 进程（模拟另一个终端里的 sop）。"""
     e = {**os.environ, 'PYTHONPATH': str(REPO), **(env or {})}
     return subprocess.run([sys.executable, '-c', code_or_file, *map(str, args)], env=e, capture_output=True, text=True)
+
+
+def make_remote_and_clone(tmp, name='demo'):
+    """一个充当 GitHub 的本机远程（main 上一个文件），加一个裸仓库形式的本机克隆（设计书 5.1 的 .git）。"""
+    tmp = pathlib.Path(tmp)
+    remote = tmp / 'github' / f'{name}.git'
+    remote.parent.mkdir(parents=True, exist_ok=True)
+    sh('git', 'init', '-q', '--bare', '-b', 'main', remote)
+    seed = tmp / 'seed'
+    sh('git', 'clone', '-q', remote, seed)
+    (seed / 'README.md').write_text('代码\n')
+    sh('git', 'add', '.', cwd=seed); sh('git', 'commit', '-qm', '初始', cwd=seed); sh('git', 'push', '-q', 'origin', 'HEAD:main', cwd=seed)
+    root = tmp / 'Project' / name
+    root.mkdir(parents=True)
+    sh('git', 'clone', '-q', '--bare', remote, root / '.git')
+    sh('git', '--git-dir', root / '.git', 'config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*')
+    sh('git', '--git-dir', root / '.git', 'fetch', '-q', 'origin')
+    return remote, root / '.git'

@@ -1,0 +1,18 @@
+# 第一段 W21：守门检查（pull_request_target：定义和检出的都是主线；不检出、不运行 PR 里的代码）
+name: guard
+on:
+  pull_request_target:
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: 守门
+        run: python3 .github/sop/guard.py

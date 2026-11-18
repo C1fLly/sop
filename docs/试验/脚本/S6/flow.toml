@@ -1,0 +1,61 @@
+# 试验用的流程定义：照设计书 7.5 的工单流程和 7.4 的规划几步写的简化版
+[[flow.ticket]]
+id = "T1"
+[[flow.ticket]]
+id = "T2"
+[[flow.ticket]]
+id = "T3"
+[[flow.ticket]]
+id = "T4"
+on_fail = "T6"
+[[flow.ticket]]
+id = "T5"
+on_fail = "T6"
+[[flow.ticket]]
+id = "T9"
+on_fail = "T6"
+[[flow.ticket]]
+id = "T10"
+[[flow.ticket]]
+id = "T11"            # 有执行条件：只在逐张验收时做
+[[flow.ticket]]
+id = "T12"
+[[flow.ticket]]
+id = "T13"
+on_fail = "T14"
+[[flow.ticket]]
+id = "T15"
+# 不在主线上的几步
+[[flow.ticket]]
+id = "T6"
+side = true
+goto = "T4"           # 修复完回到 T4
+max_attempts = 3
+on_exhausted = "T7"
+[[flow.ticket]]
+id = "T7"
+side = true
+goto = "T4"
+max_attempts = 1
+on_exhausted = "T8"
+[[flow.ticket]]
+id = "T8"
+side = true
+stop = true           # 技术决策之后停下，等后续处理
+[[flow.ticket]]
+id = "T14"
+side = true
+goto = "T5"
+
+[[flow.feature]]
+id = "F8"
+[[flow.feature]]
+id = "F9"
+[[flow.feature]]
+id = "F10"            # 人的确认
+[[flow.feature]]
+id = "F11"
+[[flow.feature]]
+id = "F14"
+[[flow.feature]]
+id = "F15"

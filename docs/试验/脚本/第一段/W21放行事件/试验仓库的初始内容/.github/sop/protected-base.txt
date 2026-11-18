@@ -1,0 +1,6 @@
+# 工具包这个版本规定的受保护路径（试验用）。以 /** 结尾的是「这个目录下的全部」
+sop.json
+.github/workflows/**
+.github/sop/**
+docs/standards/**
+docs/baseline/**

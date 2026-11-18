@@ -1,0 +1,25 @@
+# 第一段 W21：项目检查（pull_request 触发，运行 PR 里的代码；定义能被 PR 改掉，所以单靠它不算数）
+name: check-pr
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+jobs:
+  fast:
+    # W22：目标是 main 的草稿 PR 连快档也跳过
+    if: ${{ !(github.base_ref == 'main' && github.event.pull_request.draft) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "FAST action=${{ github.event.action }} draft=${{ github.event.pull_request.draft }} base=${{ github.base_ref }}"
+      - run: bash ci/check.sh
+  full:
+    # 全档：只在「目标是 main 且已转正式」的 PR 上跑
+    if: ${{ github.base_ref == 'main' && !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "FULL action=${{ github.event.action }} draft=${{ github.event.pull_request.draft }}"
+      - run: bash ci/check.sh
+      - run: sleep 15

@@ -1,0 +1,64 @@
+19:09:35 特权侧开始值守。项目 /tmp/sop-spike-s7b/proj，功能 jizhang
+19:09:50 收到请求 new-worktree 01（来自 /tmp/sop-spike-s7b/proj/feat-jizhang）
+19:09:50 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null ls-tree --name-only origin/feat/jizhang .scratch/jizhang/issues/
+19:09:50 ＋ wt new ticket/jizhang/01 feat/jizhang --yes   （在 /tmp/sop-spike-s7b/proj）
+19:09:50 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse feat/jizhang
+19:09:50 回答：ok /tmp/sop-spike-s7b/proj/ticket-jizhang-01
+19:09:50 收到请求 new-worktree 02（来自 /tmp/sop-spike-s7b/proj/feat-jizhang）
+19:09:50 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null ls-tree --name-only origin/feat/jizhang .scratch/jizhang/issues/
+19:09:50 ＋ wt new ticket/jizhang/02 feat/jizhang --yes   （在 /tmp/sop-spike-s7b/proj）
+19:09:50 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse feat/jizhang
+19:09:50 回答：ok /tmp/sop-spike-s7b/proj/ticket-jizhang-02
+19:11:43 收到请求 merged 02（来自 /tmp/sop-spike-s7b/proj/feat-jizhang）
+19:11:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse ticket/jizhang/02
+19:11:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor ticket/jizhang/02 feat/jizhang
+19:11:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse feat/jizhang
+19:11:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse origin/feat/jizhang
+19:11:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor f4a86306942e129424d304659ca426faccf57d62 e0e0a3473aa02358aed03c6689e89effd23a6b95
+19:11:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null diff --name-only f4a86306942e129424d304659ca426faccf57d62..e0e0a3473aa02358aed03c6689e89effd23a6b95
+19:11:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null push origin feat/jizhang:feat/jizhang
+19:11:43 回答：ok ok（工单 02 已合入；已推送 e0e0a34）
+19:12:43 收到请求 merged 01（来自 /tmp/sop-spike-s7b/proj/feat-jizhang）
+19:12:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse ticket/jizhang/01
+19:12:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor ticket/jizhang/01 feat/jizhang
+19:12:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse feat/jizhang
+19:12:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse origin/feat/jizhang
+19:12:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor e0e0a3473aa02358aed03c6689e89effd23a6b95 c741a454cbe164b1245a95f70d30d2fef5307c32
+19:12:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null diff --name-only e0e0a3473aa02358aed03c6689e89effd23a6b95..c741a454cbe164b1245a95f70d30d2fef5307c32
+19:12:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null push origin feat/jizhang:feat/jizhang
+19:12:43 回答：ok ok（工单 01 已合入；已推送 c741a45）
+19:12:43 收到请求 new-worktree 03（来自 /tmp/sop-spike-s7b/proj/feat-jizhang）
+19:12:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null ls-tree --name-only origin/feat/jizhang .scratch/jizhang/issues/
+19:12:43 ＋ wt new ticket/jizhang/03 feat/jizhang --yes   （在 /tmp/sop-spike-s7b/proj）
+19:12:43 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse feat/jizhang
+19:12:43 回答：ok /tmp/sop-spike-s7b/proj/ticket-jizhang-03
+19:14:18 收到请求 merged 03（来自 /tmp/sop-spike-s7b/proj/feat-jizhang）
+19:14:18 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse ticket/jizhang/03
+19:14:18 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor ticket/jizhang/03 feat/jizhang
+19:14:18 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse feat/jizhang
+19:14:18 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse origin/feat/jizhang
+19:14:18 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor c741a454cbe164b1245a95f70d30d2fef5307c32 5d83286b1666ecaef1eebc898b5a07c22dfe0ee8
+19:14:18 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null diff --name-only c741a454cbe164b1245a95f70d30d2fef5307c32..5d83286b1666ecaef1eebc898b5a07c22dfe0ee8
+19:14:18 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null push origin feat/jizhang:feat/jizhang
+19:14:18 回答：ok ok（工单 03 已合入；已推送 5d83286）
+19:15:27 收到请求 new-worktree fix（来自 /tmp/sop-spike-s7b/proj/feat-jizhang）
+19:15:27 ＋ wt new ticket/jizhang/fix feat/jizhang --yes   （在 /tmp/sop-spike-s7b/proj）
+19:15:27 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse feat/jizhang
+19:15:27 回答：ok /tmp/sop-spike-s7b/proj/ticket-jizhang-fix
+19:17:17 收到请求 merged fix（来自 /tmp/sop-spike-s7b/proj/feat-jizhang）
+19:17:17 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse ticket/jizhang/fix
+19:17:17 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor ticket/jizhang/fix feat/jizhang
+19:17:17 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse feat/jizhang
+19:17:17 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse origin/feat/jizhang
+19:17:17 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor 5d83286b1666ecaef1eebc898b5a07c22dfe0ee8 6448ac3e9946e6487db631633c52880eab82b9c6
+19:17:17 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null diff --name-only 5d83286b1666ecaef1eebc898b5a07c22dfe0ee8..6448ac3e9946e6487db631633c52880eab82b9c6
+19:17:17 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null push origin feat/jizhang:feat/jizhang
+19:17:17 回答：ok ok（工单 fix 已合入；已推送 6448ac3）
+19:17:26 收到请求 done None（来自 /tmp/sop-spike-s7b/proj/feat-jizhang）
+19:17:26 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse feat/jizhang
+19:17:26 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null rev-parse origin/feat/jizhang
+19:17:26 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor 6448ac3e9946e6487db631633c52880eab82b9c6 f729bce55e1d7b5b73de53e48e12f911e943932d
+19:17:26 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null diff --name-only 6448ac3e9946e6487db631633c52880eab82b9c6..f729bce55e1d7b5b73de53e48e12f911e943932d
+19:17:26 ＋ git --git-dir=/tmp/sop-spike-s7b/proj/.git -c core.hooksPath=/dev/null push origin feat/jizhang:feat/jizhang
+19:17:27 回答：ok ok（全部完成；已推送 f729bce）
+19:17:40 特权侧停止值守

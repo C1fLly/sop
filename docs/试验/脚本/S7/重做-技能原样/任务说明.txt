@@ -1,0 +1,13 @@
+规格在 .scratch/jizhang/spec.md，工单在 .scratch/jizhang/issues/ 下。
+
+这一步的任务说明（技能原文里有几处和这个环境不一样，以这里为准）：
+
+1. 集成分支已经有了：就是你现在所在的目录（分支 feat/jizhang）。不要再建集成分支。
+2. 不要推送，不要开 PR，结尾也不要把 PR 转正式。这个环境里没有远程仓库的访问权，这些事由外面的流程命令做。
+3. 每张工单的工作目录由外面替你建：执行 `sopreq new-worktree <工单编号>`（例如 `sopreq new-worktree 01`），它会打印出建好的目录，目录已经在自己的分支上，分支以集成分支为起点。不要用任何别的办法建工作目录或分支：不要 `git worktree add`、`git branch`、`git checkout -b`，也不要用帮手工具自带的隔离工作目录功能。每个做工单的帮手只在分给它的那个目录里干活。
+4. 合并照技能原文做：在集成分支的目录里用普通的本地 `git merge`。每合完一张，执行 `sopreq merged <工单编号>`，等它回答 ok 再往下；它回答别的就停下并报告它说了什么。
+5. 全部工单做完后的代码审查，比较起点是 `main`。修审查问题的那个帮手，工作目录用 `sopreq new-worktree fix` 要，合并后执行 `sopreq merged fix`。
+6. 探索帮手的笔记如果要存，存到项目根下的 `.shared/notes/`（项目根就是集成分支目录的上一级）。
+7. 最后把每张工单按工单系统的规矩关掉并提交到集成分支，执行 `sopreq done`，然后汇报。
+8. 不要清理工作目录，结束后由外面清理。
+9. 这个环境里 git 提交或合并时会打印一行「Unable to create …packed-refs.lock: Read-only file system」，这是正常的，提交和合并其实成功了，不用理会。

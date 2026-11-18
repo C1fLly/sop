@@ -1,0 +1,13 @@
+name: sneak-push
+on:
+  push:
+jobs:
+  steal-env:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - env:
+          E: ${{ secrets.FAKE_ENV_DEPLOY_KEY }}
+        run: |
+          if [ -n "$E" ]; then echo "ENV_SECRET_READABLE=yes len=${#E}"; else echo "ENV_SECRET_READABLE=no"; fi

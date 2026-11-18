@@ -1,0 +1,28 @@
+25c25
+< 2. (optional) Use an **exploration subagent** to conduct any exploration required by the tickets - relevant codebase files or external documentation. Ensure the exploration subagent can save files - it should save its markdown notes in a directory outside the repo, accessible by all future subagents. This lets **implementer subagents** focus on implementation rather than exploration.
+---
+> 2. (optional) Use an **exploration subagent** to conduct any exploration required by the tickets - relevant codebase files or external documentation. Ensure the exploration subagent can save files - it should save its markdown notes in the `.shared/notes/` directory under the project root (the parent directory of the integration branch's worktree), accessible by all future subagents. This lets **implementer subagents** focus on implementation rather than exploration.
+27c27
+< 3. Create the integration branch. If the issue tracker closes work through PRs, or the user asks for one, open a draft PR after the first merge in step 5 (a branch with no commits ahead of main can't open one), marked as closing the spec and tickets.
+---
+> 3. The integration branch already exists and you are standing in its worktree. Do not create it. Do not open a PR and do not push: the pull request and all pushing are handled outside this session.
+29c29
+< 4. Use a fresh **implementer subagent** for each ticket, each in its own worktree on its own branch. Each implementer subagent:
+---
+> 4. Use a fresh **implementer subagent** for each ticket, each in its own worktree on its own branch. Worktrees are created for you: run `sopreq new-worktree <ticket number>` (for example `sopreq new-worktree 01`) and it prints the path of a worktree for that ticket, already on its own branch based on the integration branch. Never create a worktree or a branch any other way: no `git worktree add`, no `git branch`, no `git checkout -b`, and do not use any worktree-isolation feature of the subagent tool. Each implementer subagent works only inside the worktree path it was given. Each implementer subagent:
+34c34
+< 5. Once an **implementer subagent** completes, merge its work to the integration branch with a **merger subagent**.
+---
+> 5. Once an **implementer subagent** completes, merge its work to the integration branch with a **merger subagent**: a plain local `git merge` inside the integration branch's worktree. After each successful merge, run `sopreq merged <ticket number>` and wait for it to answer `ok` before moving on; if it answers anything else, stop and report what it said.
+38c38
+< 7. Once all tickets are complete, call the Skill tool with `code-review` on the integration branch. Fix all issues raised by the code review in a single fresh **implementer subagent**.
+---
+> 7. Once all tickets are complete, call the Skill tool with `code-review` on the integration branch (the fixed point to compare against is `main`). Fix all issues raised by the code review in a single fresh **implementer subagent**; get its worktree with `sopreq new-worktree fix`, and after merging its work run `sopreq merged fix`.
+40c40
+< 8. If a draft PR exists, mark it ready for review. Otherwise, resolve each ticket the way the issue tracker closes work, and report the integration branch.
+---
+> 8. Resolve each ticket the way the issue tracker closes work, commit that on the integration branch, run `sopreq done`, and report the integration branch. Do not mark any pull request ready: that is handled outside this session.
+42c42
+< 9. Clean up all **implementer subagent** worktrees.
+---
+> 9. Do not clean up the worktrees. They are removed outside this session after you finish.

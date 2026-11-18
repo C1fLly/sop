@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# S7 试验：工具包安装的准备脚本。特权侧执行 wt new 时会带着凭据运行它，所以这里只做不运行项目代码的事。
+set -euo pipefail
+[ -e "$WT_ROOT/.shared/.env" ] && ln -sfn "../.shared/.env" .env || true
+echo "post-create: 只链接 .env，不安装依赖（S7）" >&2

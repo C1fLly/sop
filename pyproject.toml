@@ -1,0 +1,11 @@
+# 工具包自己的 Python 设置。内核只用标准库（设计书 3.3），这里不列任何依赖。
+# 用 uv 运行：uv run python -m unittest …；python-downloads = "never" 让 uv 只用系统自带的 Python，不另外下载。
+[project]
+name = "sop-toolkit"
+version = "0"
+requires-python = ">=3.14"
+dependencies = []
+
+[tool.uv]
+package = false
+python-downloads = "never"

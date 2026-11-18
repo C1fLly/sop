@@ -1,0 +1,22 @@
+# 试验 S4：主线上的「部署」流程（只打印，不部署任何东西）
+name: deploy
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - name: 检查定义的标记
+        run: |
+          echo "DEFINITION_MARKER=deploy@main-v1"
+          echo "event=${{ github.event_name }} ref=${{ github.ref }}"
+      - name: 试读假密钥
+        env:
+          K: ${{ secrets.FAKE_DEPLOY_KEY }}
+          E: ${{ secrets.FAKE_ENV_DEPLOY_KEY }}
+        run: |
+          if [ -n "$K" ]; then echo "REPO_SECRET_READABLE=yes len=${#K} sha=$(printf %s "$K" | sha256sum | cut -c1-12)"; else echo "REPO_SECRET_READABLE=no"; fi
+          if [ -n "$E" ]; then echo "ENV_SECRET_READABLE=yes len=${#E} sha=$(printf %s "$E" | sha256sum | cut -c1-12)"; else echo "ENV_SECRET_READABLE=no"; fi

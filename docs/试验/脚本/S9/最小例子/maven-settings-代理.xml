@@ -1,0 +1,4 @@
+<settings><proxies>
+  <proxy><id>p1</id><active>true</active><protocol>https</protocol><host>127.0.0.1</host><port>7890</port><nonProxyHosts>localhost|127.0.0.1</nonProxyHosts></proxy>
+  <proxy><id>p2</id><active>true</active><protocol>http</protocol><host>127.0.0.1</host><port>7890</port><nonProxyHosts>localhost|127.0.0.1</nonProxyHosts></proxy>
+</proxies></settings>

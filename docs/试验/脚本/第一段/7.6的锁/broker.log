@@ -1,0 +1,80 @@
+12:58:43 特权侧开始值守。项目 /tmp/sop-p1-lock/proj，功能 demo
+12:58:44 收到请求 new-worktree 01（来自 /tmp/sop-p1-lock/proj/feat-demo）
+12:58:44 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null ls-tree --name-only origin/feat/demo .scratch/demo/issues/
+12:58:44 ＋ wt new ticket/demo/01 feat/demo --yes   （在 /tmp/sop-p1-lock/proj）
+12:58:44 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse feat/demo
+12:58:44 回答：ok /tmp/sop-p1-lock/proj/ticket-demo-01
+12:58:44 收到请求 merged 01（来自 /tmp/sop-p1-lock/proj/feat-demo）
+12:58:44 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:58:44    退出码 1：
+12:58:44 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:58:44    退出码 1：
+12:58:44 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse ticket/demo/01
+12:58:44 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor ticket/demo/01 feat/demo
+12:58:44 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse feat/demo
+12:58:44 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse origin/feat/demo
+12:58:44 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor e383036b8c276d082dc463cfe9ac9c9b876fb733 b8ceba15f53eaa0746a4ddf419bc55a3c14460c6
+12:58:44 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null diff --name-only e383036b8c276d082dc463cfe9ac9c9b876fb733..b8ceba15f53eaa0746a4ddf419bc55a3c14460c6
+12:58:44 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null push origin feat/demo:feat/demo
+12:58:44 回答：ok ok（工单 01 已合入；已推送 b8ceba1）
+12:58:45 收到请求 new-worktree 02（来自 /tmp/sop-p1-lock/proj/feat-demo）
+12:58:45 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null ls-tree --name-only origin/feat/demo .scratch/demo/issues/
+12:58:45 ＋ wt new ticket/demo/02 feat/demo --yes   （在 /tmp/sop-p1-lock/proj）
+12:58:45 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse feat/demo
+12:58:45 回答：ok /tmp/sop-p1-lock/proj/ticket-demo-02
+12:58:46 收到请求 merged 02（来自 /tmp/sop-p1-lock/proj/feat-demo）
+12:58:46 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:58:46    退出码 1：
+12:58:46 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:58:46    退出码 1：
+12:58:46 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse ticket/demo/02
+12:58:46 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor ticket/demo/02 feat/demo
+12:58:46 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse feat/demo
+12:58:46 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse origin/feat/demo
+12:58:46 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor b8ceba15f53eaa0746a4ddf419bc55a3c14460c6 7fa22f8618b76017ca9d39c462ae9912deba2509
+12:58:46 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null diff --name-only b8ceba15f53eaa0746a4ddf419bc55a3c14460c6..7fa22f8618b76017ca9d39c462ae9912deba2509
+12:58:46 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null push origin feat/demo:feat/demo
+12:58:46 回答：ok ok（工单 02 已合入；已推送 7fa22f8）
+12:58:46 收到请求 new-worktree 03（来自 /tmp/sop-p1-lock/proj/feat-demo）
+12:58:46 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null ls-tree --name-only origin/feat/demo .scratch/demo/issues/
+12:58:46 ＋ wt new ticket/demo/03 feat/demo --yes   （在 /tmp/sop-p1-lock/proj）
+12:58:46 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse feat/demo
+12:58:46 回答：ok /tmp/sop-p1-lock/proj/ticket-demo-03
+12:58:47 收到请求 merged 03（来自 /tmp/sop-p1-lock/proj/feat-demo）
+12:58:47 回答：拒绝 核对小文件不通过，不碰这个目录：/tmp/sop-p1-lock/proj/ticket-demo-03/.git 的内容被改过（应为 'gitdir: /tmp/sop-p1-lock/proj/.git/worktrees/ticket-demo-03'，实际 'gitdir: /tmp/假仓库/.git/worktrees/ticket-demo-03'）
+12:58:47 收到请求 merged 03（来自 /tmp/sop-p1-lock/proj/feat-demo）
+12:58:47 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:58:47    退出码 1：
+12:58:47 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:58:47    退出码 1：
+12:58:47 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse ticket/demo/03
+12:58:47 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor ticket/demo/03 feat/demo
+12:58:47 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse feat/demo
+12:58:47 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse origin/feat/demo
+12:58:47 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor 7fa22f8618b76017ca9d39c462ae9912deba2509 b0aae28c60cf66ef8b4da419883fb91644ea34a8
+12:58:47 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null diff --name-only 7fa22f8618b76017ca9d39c462ae9912deba2509..b0aae28c60cf66ef8b4da419883fb91644ea34a8
+12:58:47 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null push origin feat/demo:feat/demo
+12:58:47 回答：ok ok（工单 03 已合入；已推送 b0aae28）
+12:58:48 收到请求 done None（来自 /tmp/sop-p1-lock/proj/feat-demo）
+12:58:48 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:58:48    退出码 1：
+12:58:48 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:58:48    退出码 1：
+12:58:48 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:58:48    退出码 1：
+12:58:48 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:58:48    退出码 1：
+12:58:48 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse feat/demo
+12:58:48 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null rev-parse origin/feat/demo
+12:58:48 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null merge-base --is-ancestor b0aae28c60cf66ef8b4da419883fb91644ea34a8 b0aae28c60cf66ef8b4da419883fb91644ea34a8
+12:58:48 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null diff --name-only b0aae28c60cf66ef8b4da419883fb91644ea34a8..b0aae28c60cf66ef8b4da419883fb91644ea34a8
+12:58:48 回答：ok ok（全部完成；集成分支没有新提交，不用推送）
+12:58:48 特权侧停止值守
+12:59:02 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:59:02    退出码 1：
+12:59:02 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:59:02    退出码 1：
+12:59:02 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:59:02    退出码 1：
+12:59:02 ＋ git --git-dir=/tmp/sop-p1-lock/proj/.git -c core.hooksPath=/dev/null config --get extensions.worktreeConfig
+12:59:02    退出码 1：

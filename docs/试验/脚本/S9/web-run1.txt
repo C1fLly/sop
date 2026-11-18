@@ -1,0 +1,28 @@
+Progress: resolved 68, reused 0, downloaded 40, added 0
+Progress: resolved 69, reused 0, downloaded 42, added 0
+Packages: +38
+++++++++++++++++++++++++++++++++++++++
+Progress: resolved 70, reused 0, downloaded 43, added 38, done
+
+dependencies:
++ vue 3.5.45
+
+devDependencies:
++ @playwright/test 1.65.0 (1.65.1 is available)
++ @vitejs/plugin-vue 6.0.11
++ vite 8.3.8
+
+Done in 12.2s using pnpm v10.34.9
+--- 构建
+transforming...
+✓ 10 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                 0.20 kB │ gzip:  0.18 kB
+dist/assets/index-B6TGIXqY.js  66.02 kB │ gzip: 26.11 kB
+
+[32m✓ built in 64ms[39m
+
+real	0m12.694s
+user	0m0.010s
+sys	0m0.006s

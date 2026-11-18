@@ -1,0 +1,4 @@
+# 档案 demo 的受保护规范文件：目录 + 检查工具认得的所有配置文件名（不带 / 的在任何位置都算）
+config/lint/**
+.eslintrc*
+eslint.config.*

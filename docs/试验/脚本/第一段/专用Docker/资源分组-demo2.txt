@@ -1,0 +1,12 @@
+# 第一段：demo2 的资源分组设置（审查后从 vm-a 取出存档；第一段试验时是手工加的，没进脚本）
+# 放在 ~/.config/systemd/user/ 下。上一个文件是分组本身，下一个让专用 Docker 落进这个分组。
+=== sop-demo2.slice
+[Unit]
+Description=SOP 项目 demo2 的资源上限
+[Slice]
+MemoryMax=300M
+MemorySwapMax=0
+CPUQuota=100%
+=== sop-docker-demo2.service.d/slice.conf
+[Service]
+Slice=sop-demo2.slice

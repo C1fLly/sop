@@ -1,0 +1,33 @@
+# 试验 S4：PR 上的检查（pull_request 触发）
+name: check-pr
+on:
+  pull_request:
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: 检查定义的标记
+        run: |
+          echo "DEFINITION_MARKER=check-pr@main-v1"
+          echo "event=${{ github.event_name }} base=${{ github.base_ref }} head=${{ github.head_ref }}"
+          echo "workflow_ref=${{ github.workflow_ref }}"
+          echo "workflow_sha=${{ github.workflow_sha }} sha=${{ github.sha }}"
+      - name: 试读仓库级的假密钥
+        env:
+          K: ${{ secrets.FAKE_DEPLOY_KEY }}
+        run: |
+          if [ -n "$K" ]; then echo "REPO_SECRET_READABLE=yes len=${#K} sha=$(printf %s "$K" | sha256sum | cut -c1-12)"; else echo "REPO_SECRET_READABLE=no"; fi
+      - name: 令牌权限
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl -s -o /dev/null -w "TOKEN_CAN_READ_REPO=%{http_code}\n" -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}"
+      - name: 项目检查
+        run: echo "检查被 PR 自己改成了永远通过"
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "DEFINITION_MARKER=FAKE-guard-added-by-PR"

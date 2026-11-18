@@ -1,0 +1,25 @@
+# 试验 S4：守门检查（pull_request_target 触发，定义取自主线；不检出、不运行 PR 里的代码）
+name: check-target
+on:
+  pull_request_target:
+permissions:
+  pull-requests: read
+  contents: read
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 检查定义的标记
+        run: |
+          echo "DEFINITION_MARKER=check-target@main-v1"
+          echo "event=${{ github.event_name }} base=${{ github.base_ref }} head=${{ github.head_ref }}"
+          echo "workflow_ref=${{ github.workflow_ref }}"
+      - name: PR 有没有改受保护路径
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
+          bad=$(printf '%s\n' "$files" | grep -E '^(\.github/workflows/|ci/|sop\.json$)' || true)
+          if [ -n "$bad" ]; then echo "PROTECTED_PATH_TOUCHED=yes"; printf '%s\n' "$bad"; exit 1; fi
+          echo "PROTECTED_PATH_TOUCHED=no"

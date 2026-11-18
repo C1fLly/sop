@@ -2,7 +2,7 @@
 
 真用时：sop 走到人的步骤就停下，打印「现在需要你做什么、做完执行什么命令」（8.4）；小白执行 sop answer，在终端里一项一项回答。
 流程沙箱里：照剧本回答（SOP_HUMAN_SCRIPT）。剧本：{"<范围>:<步骤>": [回答, ...], "*:<步骤>": [...]}，按顺序一条一条用；
-回答里可以写 "wait_for": ["<范围>:<步骤>", ...]，表示要等那几条先答完才轮到它（让几张工单的先后确定下来）。
+回答里可以写 "do": [命令]，模拟人在别处动手（{pr} 换成 PR 号）；可以写 "wait_for": ["<范围>:<步骤>", ...]，表示要等那几条先答完才轮到它（让几张工单的先后确定下来）。
 用到第几条记在 ~/tools/sop/state/<项目名>/human-used.json。
 """
 import json
@@ -83,4 +83,8 @@ class ScriptedHuman(NoHuman):
             f.write_text(json.dumps(used, ensure_ascii=False))
             used[f'{scope}:{step}'] = used.get(f'{scope}:{step}', 0) + (0 if key == f'{scope}:{step}' else 1)
             f.write_text(json.dumps(used, ensure_ascii=False))
-            return {k: v for k, v in a.items() if k != 'wait_for'}
+            for cmd in a.get('do', []):      # 模拟人在别处动手（例如在网页上点合并）
+                import subprocess
+                cmd = cmd.replace('{pr}', str((info or {}).get('pr', '')))
+                subprocess.run(cmd, shell=True, capture_output=True)
+            return {k: v for k, v in a.items() if k not in ('wait_for', 'do')}

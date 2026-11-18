@@ -6,7 +6,8 @@
   append     {路径: 内容}         追加
   delete     [路径]
   sh         [命令]               依次执行（当前目录），出错就停（模拟 AI 跑命令）
-  merge      分支名               把这个分支合进来；有冲突时按 merge_take 取哪一边（ours/theirs），图片一律取对方（7.5 的 T14）
+  merge      分支名               把这个分支合进来；有冲突时按 merge_take 取哪一边（ours/theirs）；视觉基准一律取对方（7.5 的 T14）
+  pre_files  {路径: 内容}         睡之前先写的文件（给「中途被打断」留下没提交的改动）
   commit     提交说明              git add -A 再提交（只有能提交的放法才成功，6.3）
   result     对象 / null          结果文件里的字段（和默认的合并）；null 表示不交回结果文件
   log        [行]                 往会话日志里追加的行（例如造额度报错）
@@ -24,12 +25,17 @@ import uuid
 
 def main():
     task = json.load(open(sys.argv[1], encoding='utf-8'))
-    a = json.load(open(sys.argv[2], encoding='utf-8'))
+    tid = task['scope'].rsplit('/', 1)[-1]
+    raw = open(sys.argv[2], encoding='utf-8').read().replace('{ticket}', tid)   # 剧本里可以用 {ticket} 代入工单编号
+    a = json.loads(raw)
     home = os.path.join(os.environ['HOME'], '.fakeai')
     os.makedirs(home, exist_ok=True)
     session = a.get('resumed') or uuid.uuid4().hex[:12]
     log = open(os.path.join(home, f'{session}.jsonl'), 'a', encoding='utf-8')
     log.write(json.dumps({'type': 'start', 'step': task['step'], 'scope': task['scope']}, ensure_ascii=False) + '\n')
+    for p, c in (a.get('pre_files') or {}).items():
+        os.makedirs(os.path.dirname(p) or '.', exist_ok=True)
+        open(p, 'w', encoding='utf-8').write(c)
     if a.get('sleep'):
         log.flush(); time.sleep(float(a['sleep']))
     for p, c in (a.get('files') or {}).items():
@@ -54,7 +60,7 @@ def main():
         if r.returncode:   # 有冲突：按剧本取一边；图片取对方（功能分支）那一份
             files = subprocess.run(['git', 'diff', '--name-only', '--diff-filter=U'], capture_output=True, text=True).stdout.split()
             for f in files:
-                side = '--theirs' if f.endswith('.png') else ('--ours' if a.get('merge_take', 'theirs') == 'ours' else '--theirs')
+                side = '--theirs' if f.startswith('docs/baseline/') else ('--ours' if a.get('merge_take', 'theirs') == 'ours' else '--theirs')
                 subprocess.run(['git', 'checkout', side, '--', f])
             subprocess.run(['git', 'add', '-A'])
             subprocess.run(['git', 'commit', '--no-edit', '-q'], capture_output=True)

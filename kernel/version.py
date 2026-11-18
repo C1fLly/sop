@@ -109,7 +109,7 @@ def upgrade(p, target, human):
     p.journal.append(*rel)                        # 先写放行，再推送（6.4）
     g('commit', '-q', '-m', f'chore: 工具包升级到 {target[:8]}（{ "修补版" if kind == "patch" else "大版本"}）')
     steps.push(eng, name)
-    p.wt('pr', '--base', 'main', '--title', f'chore: 工具包升级到 {target[:8]}', cwd=w)
+    p.wt('pr', '--draft', '--base', 'main', '--title', f'chore: 工具包升级到 {target[:8]}', cwd=w)   # 先草稿再转正式，F19 才认（6.4）
     n = steps.gh_json(eng, 'pr', 'list', '--state', 'open', '--head', name, '--json', 'number')[0]['number']
     p.gh('pr', 'ready', str(n), check=False)
     st, line, head = steps.wait_checks(eng, n, steps.NAMES, True)

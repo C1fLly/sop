@@ -190,6 +190,8 @@ actor = "script"
 action = "feature.fix_ticket"
 side = true
 goto = "F14"
+max_attempts = 5
+on_exhausted = "STOP"
 
 [[step]]
 id = "F18"

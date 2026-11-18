@@ -347,7 +347,10 @@ def gate_step(eng, f, sc, step, attempt):
                         ro=ro, rw=[str(cache)] if cache.is_dir() else [], env=env)
     r = sandbox.run(ctx, cmd, timeout=3600)
     rep_p = d / 'out' / 'report.json'
-    rep = json.loads(rep_p.read_text()) if rep_p.exists() else {}
+    if not rep_p.exists():
+        # 门禁连报告都没写出来：多半是工具包或档案自己的问题（命令写错、脚本不在），不是代码的问题，不生成修复工单（16.5）
+        raise ToolkitBug(f'门禁命令没有正常运行（没有写出报告）：{" ".join(cmd)}；输出：{(r.stdout + r.stderr).strip()[-300:]}')
+    rep = json.loads(rep_p.read_text())
     ui = {}
     for path in rep.get('ui_changes', []):
         shot = d / 'out' / 'screens' / pathlib.Path(path).name
@@ -454,9 +457,10 @@ def f_ready(eng, f, sc, step, attempt, pos):
     return R(True, payload={'pr': n, 'released': len(rep['released'])})
 
 
-def wait_checks(eng, n, names, want_ready, deadline_s=3600):
+def wait_checks(eng, n, names, want_ready, deadline_s=None):
     """等 GitHub 上的检查。返回 (通过, 说明, 最新提交)。失败的先重跑一次（排除偶发，7.4 的 F19）。"""
     t0, reran = time.time(), False
+    deadline_s = deadline_s or int(os.environ.get('SOP_CHECK_DEADLINE', '3600'))
     while True:
         pv = pr_view(eng, n)
         if pv['mergeable'] == 'CONFLICTING':
@@ -637,6 +641,9 @@ def t_verify(eng, f, t, step, attempt, pos):
             bad.append(line)
     if g('status', '--porcelain', '--untracked-files=all'):
         bad.append('工作区不干净：有没提交的改动或新文件')
+    opened = last(eng, f, t.scope, ('T1',))
+    if opened and opened.get('base') == head:
+        bad.append('这张工单一个提交都没有（AI 说「做完了」不算数，Y6）')
     acc = confirm_of(eng, f, t.scope, 'T11') or last(eng, f, t.scope, ('T11',), 'confirm') or {}
     exempt = acc.get('images', {})
     ok, line, rep = check_scope(str(g.gitdir), str(p.root / t.wt), ai['base'], ['**'], p.protected_patterns(), ai['snapshot'])

@@ -21,6 +21,7 @@ from .locks import ProjectLock
 from .replay import replay
 
 PARALLEL = int(os.environ.get('SOP_PARALLEL', '3'))
+MAX_STEPS = int(os.environ.get('SOP_MAX_STEPS_PER_RUN', '200'))   # 一轮里同一个范围最多走几步（防打转的总保险，8.4）
 
 
 @dataclass
@@ -48,6 +49,7 @@ class Engine:
         self.waiting = []             # 在等人做什么
         self.problems = []            # 停下的原因
         self.tried_blocked = set()
+        self.counts = {}
         self.outlock = threading.Lock()
         self.poll = float(os.environ.get('SOP_POLL_SECONDS', '15'))
         from . import steps
@@ -117,6 +119,11 @@ class Engine:
     # ---------- 一步 ----------
     def do_step(self, feature, sc, step, pos):
         sid = step['id']
+        with self.outlock:
+            self.counts[sc.scope] = self.counts.get(sc.scope, 0) + 1
+            if self.counts[sc.scope] > MAX_STEPS:
+                self.problems.append(f'{sc.scope} 这一轮已经走了 {MAX_STEPS} 步还没走完，回头路走得太多了，先停下（8.4）。请启动维修窗口。')
+                raise Stop
         if step['actor'] in ('human', 'ai_interactive') and not self.human.can(sc.scope, sid):
             if not (step.get('condition') and not self.steps.condition(self, step['condition'], feature, sc)):
                 self.waiting.append((sc.scope, sid, step['name']))
@@ -318,6 +325,8 @@ class Engine:
     # ---------- 停下时打印的四件事 ----------
     def report(self, status):
         lines = ['', '======== 现在在哪 ========']
+        if status == 'done':
+            self.waiting = []
         try:
             proj = self.p.journal.read(['project'], fetch=False)
             f = state.current_feature(proj)
@@ -326,6 +335,9 @@ class Engine:
                 lines.append(f'功能 {f.name}：{fpos.pos}（{"进行中" if fpos.pos == "F14" and fpos.status == "interrupted" else fpos.status}）')
                 for tid, (t, pos) in ts.items():
                     lines.append(f'  工单 {tid}：{pos.pos}（{pos.status}）')
+                # 在等人做什么：按现在的位置现算（早先记下的、后来已经答了的不算）
+                now = {(f.scope, fpos.pos)} | {(t.scope, pos.pos) for t, pos in ts.values()}
+                self.waiting = [w for w in self.waiting if (w[0], w[1]) in now and fpos.status != 'done']
         except Exception as e:   # noqa: BLE001
             lines.append(f'（读位置出错：{e}）')
         lines.append('======== 刚才自动做了什么 ========')
@@ -333,7 +345,7 @@ class Engine:
         lines.append('======== 现在需要你做什么 ========')
         if self.problems:
             lines += [f'  停下了：{x}' for x in dict.fromkeys(self.problems)]
-        for sc, sid, name in self.waiting:
+        for sc, sid, name in dict.fromkeys(self.waiting):
             lines.append(f'  {sc} 的 {sid}（{name}）在等你')
         if not self.problems and not self.waiting:
             lines.append('  不需要你做什么' if status == 'done' else '  （无）')

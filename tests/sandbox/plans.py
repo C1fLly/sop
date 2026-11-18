@@ -32,9 +32,12 @@ def happy(feature, tickets, new_pages=False):
         f'{sc}:F16': {'result': {'findings': []}, 'cost': 1.2},
         f'{sc}:F22': {'result': {'findings': [], 'pr_body': '复盘'}, 'cost': 0.2},
     }
+    ai['*:T3'] = {'files': {'src/t{ticket}.py': '# 工单 {ticket}\n'}, 'commit': 'feat: 工单 {ticket}', 'cost': 1.5}
+    ai['*:T14'] = {'merge': f'refs/remotes/origin/feat/{feature}', 'merge_take': 'ours', 'cost': 0.6}
     for tid, _, _ in tickets:
         ai[f'ticket/{feature}/{tid}:T3'] = {'files': {f'src/t{tid}.py': f'# 工单 {tid}\n'}, 'commit': f'feat: 工单 {tid}', 'cost': 1.5}
         ai[f'ticket/{feature}/{tid}:T9'] = {'result': {'findings': []}, 'cost': 1.2}
+        ai[f'ticket/{feature}/{tid}:T14'] = {'merge': f'refs/remotes/origin/feat/{feature}', 'merge_take': 'ours', 'cost': 0.6}
     human = {f'{sc}:F2': [{'answer': '是'}], f'{sc}:F5': [{'answer': '是'}], f'{sc}:F6': [{'answer': '是'}],
              f'{sc}:F4': [{'answer': '满意'}], f'{sc}:F10': [{'answer': '是'}], f'{sc}:F13': [{'answer': ''}],
              f'{sc}:F17': [{'answer': '通过'}], '*:T11': [{'answer': '通过'}] * 10}

@@ -36,7 +36,7 @@ def snapshot_toolkit(dest, tweak=None):
 
 
 class World:
-    def __init__(self, tmp, visibility='public', name='demo'):
+    def __init__(self, tmp, visibility='public', name='demo', tweak=None):
         self.tmp = pathlib.Path(tmp)
         self.name = name
         self.home = self.tmp / 'sop-home'
@@ -51,7 +51,7 @@ class World:
         self.visibility = visibility
         self.script = {}; self.gate = {}; self.human = {}; self.rules = []
         self.save_scripts()
-        self.version = self.publish_toolkit('初始版本')
+        self.version = self.publish_toolkit('初始版本', tweak)
         self._make_project()
 
     # ---------- 环境 ----------
@@ -61,7 +61,7 @@ class World:
                 'SOP_FAKE_SCRIPT': str(self.scripts / 'ai.json'), 'SOP_FAKE_GATE': str(self.scripts / 'gate.json'),
                 'SOP_HUMAN_SCRIPT': str(self.scripts / 'human.json'), 'SOP_AI': 'fake', 'SOP_POLL_SECONDS': '0',
                 'SOP_TOOLKIT_REPO': str(self.toolkit_remote), 'GIT_CONFIG_GLOBAL': str(self.tmp / 'gitconfig'),
-                'GIT_CONFIG_NOSYSTEM': '1', 'SOP_NO_NOTIFY': '1', 'SOP_PYTHON': sys.executable}
+                'GIT_CONFIG_NOSYSTEM': '1', 'SOP_NO_NOTIFY': '1', 'SOP_PYTHON': sys.executable, 'SOP_CHECK_DEADLINE': '60'}
 
     def save_scripts(self):
         (self.scripts / 'ai.json').write_text(json.dumps(self.script, ensure_ascii=False, indent=1))
@@ -149,6 +149,26 @@ class World:
                 out, err = p.communicate()
             return subprocess.CompletedProcess(cmd, p.returncode, out, err)
         return subprocess.run(cmd, cwd=self.root, env={**self.env(), **(env or {})}, capture_output=True, text=True, timeout=timeout)
+
+    def sop_until(self, predicate, timeout=300):
+        """执行 sop，等 predicate(本世界) 成立时强制结束整组进程（模拟断电、被强制结束）。返回 (是否等到了, 输出)。"""
+        import time
+        launcher = self.home / 'sop'
+        p = subprocess.Popen([str(launcher)], cwd=self.root, env=self.env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, start_new_session=True)
+        t0, hit = time.time(), False
+        while time.time() - t0 < timeout and p.poll() is None:
+            try:
+                if predicate(self):
+                    hit = True
+                    break
+            except Exception:   # noqa: BLE001
+                pass
+            time.sleep(0.3)
+        if p.poll() is None:
+            os.killpg(p.pid, signal.SIGKILL)
+        out, _ = p.communicate()
+        return hit, out
 
     # ---------- 看结果 ----------
     def gh(self, *args):

@@ -138,5 +138,7 @@ action = "resolve_conflict"
 session = "new"
 side = true
 goto = "T4"
+max_attempts = 3
+on_exhausted = "STOP"
 changes_confirmed = true
 allowed = ["**"]

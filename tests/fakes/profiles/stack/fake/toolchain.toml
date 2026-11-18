@@ -1,0 +1,4 @@
+# 受限脚本要另外放进去的东西（6.3 四）。{profile} 是这份档案的目录；$名字 取外面的环境变量。
+ro = ["{profile}", "$SOP_FAKE_GATE"]
+[env]
+SOP_FAKE_GATE = "$SOP_FAKE_GATE"

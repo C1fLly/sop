@@ -1,0 +1,24 @@
+# 项目检查（设计书 6.4）：运行 PR 里的代码（门禁）。定义取自 PR 自己，单靠它不算数。
+# 第二段只在本机的流程沙箱里由假的 gh 模拟；在真的 GitHub 上第 2a 期验。
+name: sop-check
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]   # 要写「转正式」，GitHub 默认不在这时候跑（6.4）
+jobs:
+  fast:
+    name: fast
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 快档门禁
+        # 第 2a 期接上档案的门禁命令。在那之前明确失败：宁可红，不能空跑出绿
+        run: echo '门禁还没接上档案（第 2a 期）' && exit 1
+  full:
+    name: full
+    # 全档只在「目标是 main 且已转正式」的 PR 上跑；被跳过时 GitHub 算「成功」，所以 F19 只认真跑完的（6.4）
+    if: ${{ github.base_ref == 'main' && !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 全档门禁
+        run: echo '门禁还没接上档案（第 2a 期）' && exit 1

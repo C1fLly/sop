@@ -1,0 +1,306 @@
+#!/usr/bin/env python3
+"""假的 gh（设计书 16.2：流程沙箱里代替 GitHub）。只实现工具包和 wt 用到的那几条命令，状态存在 $FAKEGH_HOME/db.json。
+
+照 GitHub 的规矩算检查（第 0 期 S4、第一段 W21 实测过的）：
+- 快档（fast）：PR 打开、有新推送、重新打开、转正式时跑；有冲突时项目检查不跑。
+- 全档（full）：只在「目标是 main 且已转正式」时真跑，否则记成「跳过」（skipped）。
+- 守门（guard，pull_request_target）：打开、有新推送、重新打开时跑，**转正式时不跑**；有冲突照跑。真的执行主线 sop.json
+  声明的那个工具包版本里的 checks/guard/guard.py（和 GitHub 上的检查流程做同样的事：检出主线、取工具包、跑守门脚本）。
+- 公开仓库的分支保护：三个检查在最新的提交上都是「成功」或「跳过」才让合并（GitHub 把跳过算成功，F19 要防的就是这个）；
+  私有仓库（免费计划）没有保护。
+剧本（$FAKEGH_HOME/rules.json）能让某个检查失败，或者先「还在跑」几次再出结果（pending），
+或者一直「还在跑」直到某个 PR 合并了（until_merged，用来确定几张工单合并的先后）。"""
+import fcntl
+import fnmatch
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+HOME = os.environ['FAKEGH_HOME']
+DB = os.path.join(HOME, 'db.json')
+BASE_TIME = 1_790_000_000   # 假的时钟，每发生一件事加一秒，先后分得清
+
+
+def iso(t):
+    import datetime
+    return datetime.datetime.fromtimestamp(BASE_TIME + t, datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def git(*a, check=True, cwd=None):
+    p = subprocess.run(['git', *a], capture_output=True, text=True, cwd=cwd)
+    if check and p.returncode:
+        raise RuntimeError(f'git {a}: {p.stderr}')
+    return p
+
+
+class State:
+    def __enter__(self):
+        self.fd = os.open(DB + '.lock', os.O_RDWR | os.O_CREAT)
+        fcntl.flock(self.fd, fcntl.LOCK_EX)
+        self.d = json.load(open(DB))
+        return self
+
+    def __exit__(self, *exc):
+        if exc[0] is None:
+            tmp = DB + '.tmp'
+            json.dump(self.d, open(tmp, 'w'), ensure_ascii=False, indent=1)
+            os.replace(tmp, DB)
+        os.close(self.fd)
+
+    @property
+    def remote(self):
+        return self.d['remote']
+
+    def tick(self):
+        self.d['clock'] += 1
+        return iso(self.d['clock'])
+
+    def rg(self, *a, check=True):
+        return git('--git-dir', self.remote, *a, check=check)
+
+    def sha(self, branch):
+        p = self.rg('rev-parse', '--verify', '--quiet', f'refs/heads/{branch}', check=False)
+        return p.stdout.strip() or None
+
+    def conflicting(self, pr):
+        b, h = self.sha(pr['base']), pr['headRefOid']
+        if not b or not h:
+            return False
+        return self.rg('merge-tree', '--write-tree', b, h, check=False).returncode != 0
+
+    def rules(self):
+        f = os.path.join(HOME, 'rules.json')
+        return json.load(open(f)) if os.path.exists(f) else []
+
+    def rule_for(self, pr, name):
+        for r in self.rules():
+            if r.get('name', name) == name and fnmatch.fnmatch(pr['head'], r.get('head', '*')) and \
+                    fnmatch.fnmatch(pr['base'], r.get('base', '*')):
+                key = f'{r.get("id", json.dumps(r, sort_keys=True))}'
+                used = self.d.setdefault('rule_uses', {}).get(key, 0)
+                if r.get('times') is not None and used >= r['times']:
+                    continue
+                self.d['rule_uses'][key] = used + 1
+                return r
+        return None
+
+    # ---- 检查 ----
+    def add_run(self, pr, name, event, conclusion=None, log=''):
+        t = self.tick()
+        r = {'id': self.d['next_run'], 'pr': pr['number'], 'name': name, 'head_sha': pr['headRefOid'], 'event': event,
+             'status': 'completed', 'conclusion': conclusion, 'started_at': t, 'completed_at': t, 'log': log, 'pending': 0}
+        self.d['next_run'] += 1
+        rule = self.rule_for(pr, name) if conclusion != 'skipped' else None
+        if rule:
+            if rule.get('conclusion'):
+                r['conclusion'] = rule['conclusion']
+                r['log'] += f'\n（剧本：结论设成 {rule["conclusion"]}）'
+            if rule.get('pending') or rule.get('until_merged'):
+                r['status'], r['pending'], r['final'] = 'in_progress', rule.get('pending', 10**9), r['conclusion']
+                r['until_merged'] = rule.get('until_merged')
+                r['conclusion'], r['completed_at'] = None, None
+        self.d['runs'].append(r)
+        return r
+
+    def trigger(self, pr, event):
+        conflict = self.conflicting(pr)
+        if not conflict:
+            self.add_run(pr, 'fast', event, 'success')
+            real = pr['base'] == 'main' and not pr['isDraft']
+            self.add_run(pr, 'full', event, 'success' if real else 'skipped')
+        if event != 'ready_for_review':
+            ok, log = self.run_guard(pr)
+            self.add_run(pr, 'guard', event, 'success' if ok else 'failure', log)
+
+    def run_guard(self, pr):
+        """照 GitHub 上的守门检查流程：检出主线；按主线 sop.json 取工具包那个版本；跑它的 guard.py（不检出、不运行 PR 的代码）。"""
+        with tempfile.TemporaryDirectory(prefix='fakegh-guard-') as td:
+            main = os.path.join(td, 'main')
+            git('clone', '-q', '--branch', 'main', self.remote, main)
+            sop = json.load(open(os.path.join(main, 'sop.json')))
+            tk = os.path.join(td, 'toolkit')
+            git('init', '-q', tk)
+            git('-C', tk, 'fetch', '-q', '--depth', '1', sop['toolkit']['repo'], sop['toolkit']['version'])
+            git('-C', tk, 'checkout', '-q', 'FETCH_HEAD')
+            ev = os.path.join(td, 'event.json')
+            json.dump({'pull_request': {'number': pr['number'], 'base': {'ref': pr['base']}, 'head': {'ref': pr['head']}}}, open(ev, 'w'))
+            p = subprocess.run([sys.executable, os.path.join(tk, 'checks', 'guard', 'guard.py')], cwd=main, capture_output=True,
+                               text=True, env={**os.environ, 'GITHUB_EVENT_PATH': ev})
+            return p.returncode == 0, (p.stdout + p.stderr)[-3000:]
+
+    def sync(self):
+        """有新推送的 PR：更新 refs/pull/<号>/head，记一次「有新推送」并跑检查。"""
+        for pr in self.d['prs'].values():
+            if pr['state'] != 'OPEN':
+                continue
+            s = self.sha(pr['head'])
+            if s and s != pr['headRefOid']:
+                pr['headRefOid'] = s
+                self.rg('update-ref', f'refs/pull/{pr["number"]}/head', s)
+                self.trigger(pr, 'synchronize')
+
+    def poll(self):
+        """查询一次：还在跑的检查往前走一步。"""
+        merged = [p['head'] for p in self.d['prs'].values() if p['state'] == 'MERGED']
+        for r in self.d['runs']:
+            if r['status'] == 'in_progress':
+                r['pending'] -= 1
+                if r.get('until_merged') and any(fnmatch.fnmatch(h, r['until_merged']) for h in merged):
+                    r['pending'] = 0
+                if r['pending'] <= 0:
+                    r['status'], r['conclusion'], r['completed_at'] = 'completed', r.get('final') or 'success', self.tick()
+
+
+def pr_json(s, pr):
+    return {'number': pr['number'], 'title': pr['title'], 'body': pr['body'], 'state': pr['state'], 'isDraft': pr['isDraft'],
+            'baseRefName': pr['base'], 'headRefName': pr['head'], 'headRefOid': pr['headRefOid'], 'isCrossRepository': False,
+            'headRepositoryOwner': {'login': s.d['slug'].split('/')[0]}, 'mergedAt': pr.get('mergedAt'),
+            'url': f'https://github.com/{s.d["slug"]}/pull/{pr["number"]}',
+            'mergeable': 'CONFLICTING' if pr['state'] == 'OPEN' and s.conflicting(pr) else 'MERGEABLE'}
+
+
+def out(obj, args):
+    if '--json' in args:
+        fields = args[args.index('--json') + 1].split(',')
+        obj = [{k: o[k] for k in fields} for o in obj] if isinstance(obj, list) else {k: obj[k] for k in fields}
+    text = json.dumps(obj, ensure_ascii=False)
+    if '--jq' in args:
+        p = subprocess.run(['jq', '-r', args[args.index('--jq') + 1]], input=text, capture_output=True, text=True)
+        if p.returncode:
+            sys.stderr.write(p.stderr); sys.exit(1)
+        sys.stdout.write(p.stdout)
+    else:
+        print(text)
+
+
+def opt(args, name, default=None):
+    return args[args.index(name) + 1] if name in args else default
+
+
+def find_pr(s, ref):
+    ref = ref.rstrip('/').rsplit('/', 1)[-1]
+    if ref in s.d['prs']:
+        return s.d['prs'][ref]
+    for pr in sorted(s.d['prs'].values(), key=lambda p: -p['number']):
+        if pr['head'] == ref:
+            return pr
+    print(f'no pull requests found for {ref}', file=sys.stderr); sys.exit(1)
+
+
+def merge(s, pr, args):
+    if pr['state'] != 'OPEN':
+        print(f'Pull request #{pr["number"]} is not open', file=sys.stderr); sys.exit(1)
+    if pr['isDraft']:
+        print(f'Pull request #{pr["number"]} is still a draft', file=sys.stderr); sys.exit(1)
+    if s.d['visibility'] == 'public':      # 分支保护：三个检查在最新提交上「成功或跳过」（GitHub 的规矩）
+        for name in s.d.get('required', ['fast', 'full', 'guard']) if pr['base'] == 'main' else []:
+            rs = [r for r in s.d['runs'] if r['pr'] == pr['number'] and r['name'] == name and r['head_sha'] == pr['headRefOid']]
+            last = max(rs, key=lambda r: r['id']) if rs else None
+            if not last or last['status'] != 'completed' or last['conclusion'] not in ('success', 'skipped', 'neutral'):
+                print(f'Pull request #{pr["number"]} is not mergeable: required check {name} has not passed', file=sys.stderr)
+                sys.exit(1)
+    b = s.sha(pr['base'])
+    p = s.rg('merge-tree', '--write-tree', b, pr['headRefOid'], check=False)
+    if p.returncode:
+        print(f'Pull request #{pr["number"]} is not mergeable: the merge commit cannot be cleanly created', file=sys.stderr); sys.exit(1)
+    tree = p.stdout.split()[0]
+    env = {**os.environ, 'GIT_AUTHOR_NAME': 'github', 'GIT_AUTHOR_EMAIL': 'noreply@github.invalid',
+           'GIT_COMMITTER_NAME': 'github', 'GIT_COMMITTER_EMAIL': 'noreply@github.invalid'}
+    c = subprocess.run(['git', '--git-dir', s.remote, 'commit-tree', tree, '-p', b, '-m', f'{pr["title"]} (#{pr["number"]})'],
+                       capture_output=True, text=True, env=env, check=True).stdout.strip()
+    s.rg('update-ref', f'refs/heads/{pr["base"]}', c, b)
+    s.rg('update-ref', '-d', f'refs/heads/{pr["head"]}')     # 合并后删分支（I2 的设置）
+    pr['state'], pr['mergedAt'], pr['mergeCommit'] = 'MERGED', s.tick(), c
+    pr['timeline'].append({'event': 'merged', 'created_at': pr['mergedAt']})
+
+
+def main(args):
+    if not args or args[0] in ('--version', 'version'):
+        print('gh version 2.103.3 (fake)'); return 0
+    if args[:2] == ['auth', 'status']:
+        print('✓ Logged in to github.com (fake)'); return 0
+    with State() as s:
+        s.sync()
+        cmd = args[:2]
+        if cmd == ['repo', 'view']:
+            out({'name': s.d['slug'].split('/')[1], 'visibility': s.d['visibility'].upper()}, args); return 0
+        if cmd == ['pr', 'list']:
+            st, head = opt(args, '--state', 'open'), opt(args, '--head')
+            prs = [pr_json(s, p) for p in sorted(s.d['prs'].values(), key=lambda p: -p['number'])
+                   if (st == 'all' or p['state'] == st.upper()) and (head is None or p['head'] == head)]
+            out(prs, args); return 0
+        if cmd == ['pr', 'view']:
+            out(pr_json(s, find_pr(s, args[2])), args); return 0
+        if cmd == ['pr', 'create']:
+            base, head = opt(args, '--base', 'main'), opt(args, '--head')
+            sha = s.sha(head)
+            if not sha:
+                print(f'pull request create failed: head branch {head} does not exist on remote', file=sys.stderr); return 1
+            n = s.d['next_pr']; s.d['next_pr'] += 1
+            pr = {'number': n, 'title': opt(args, '--title', head), 'body': opt(args, '--body', ''), 'base': base, 'head': head,
+                  'isDraft': '--draft' in args, 'state': 'OPEN', 'headRefOid': sha, 'created_at': s.tick(), 'timeline': []}
+            s.d['prs'][str(n)] = pr
+            s.rg('update-ref', f'refs/pull/{n}/head', sha)
+            s.trigger(pr, 'opened')
+            print(f'https://github.com/{s.d["slug"]}/pull/{n}'); return 0
+        if cmd == ['pr', 'ready']:
+            pr = find_pr(s, args[2])
+            if pr['isDraft']:
+                pr['isDraft'] = False
+                t = s.tick()
+                pr['timeline'].append({'event': 'ready_for_review', 'created_at': t})
+                s.trigger(pr, 'ready_for_review')
+            print(f'✓ Pull request #{pr["number"]} is marked as "ready for review"'); return 0
+        if cmd == ['pr', 'merge']:
+            pr = find_pr(s, args[2]); merge(s, pr, args)
+            print(f'✓ Squashed and merged pull request #{pr["number"]}'); return 0
+        if cmd == ['pr', 'close']:
+            pr = find_pr(s, args[2]); pr['state'] = 'CLOSED'; pr['timeline'].append({'event': 'closed', 'created_at': s.tick()})
+            if '--delete-branch' in args:
+                s.rg('update-ref', '-d', f'refs/heads/{pr["head"]}', check=False)
+            print(f'✓ Closed pull request #{pr["number"]}'); return 0
+        if cmd == ['run', 'rerun']:
+            old = next(r for r in s.d['runs'] if str(r['id']) == args[2])
+            pr = s.d['prs'][str(old['pr'])]
+            if old['name'] == 'guard':
+                ok, log = s.run_guard(pr)
+                s.add_run(pr, 'guard', old['event'], 'success' if ok else 'failure', log)
+            elif old['name'] == 'full' and (pr['base'] != 'main' or pr['isDraft']):
+                s.add_run(pr, 'full', old['event'], 'skipped')
+            else:
+                s.add_run(pr, old['name'], old['event'], 'success')
+            return 0
+        if args[0] == 'api':
+            path = args[1]
+            parts = path.split('/')
+            s.poll()
+            if len(parts) >= 6 and parts[3] == 'commits' and parts[5] == 'check-runs':
+                runs = [{k: r[k] for k in ('id', 'name', 'head_sha', 'status', 'conclusion', 'started_at', 'completed_at', 'event')}
+                        for r in s.d['runs'] if r['head_sha'] == parts[4]]
+                obj = {'total_count': len(runs), 'check_runs': runs}
+            elif len(parts) >= 6 and parts[3] == 'issues' and parts[5] == 'timeline':
+                obj = s.d['prs'][parts[4]]['timeline']
+            elif len(parts) >= 5 and parts[3] == 'pulls':
+                pr = s.d['prs'][parts[4]]
+                obj = {'number': pr['number'], 'state': pr['state'].lower(), 'merged': pr['state'] == 'MERGED',
+                       'merge_commit_sha': pr.get('mergeCommit'), 'draft': pr['isDraft'], 'head': {'sha': pr['headRefOid']}}
+            elif len(parts) >= 5 and parts[3] == 'actions' and parts[4] == 'runs':
+                obj = {'runs': [{k: r[k] for k in ('id', 'name', 'head_sha', 'status', 'conclusion', 'log')} for r in s.d['runs']]}
+            else:
+                print(f'fake gh: 不认识的接口 {path}', file=sys.stderr); return 1
+            out(obj, args); return 0
+    print(f'fake gh: 不认识的命令 {" ".join(args)}', file=sys.stderr)
+    return 1
+
+
+def init(home, remote, slug, visibility):
+    """建一个假的 GitHub 仓库的状态。"""
+    os.makedirs(home, exist_ok=True)
+    json.dump({'clock': 0, 'remote': str(remote), 'slug': slug, 'visibility': visibility, 'prs': {}, 'runs': [],
+               'next_pr': 1, 'next_run': 1}, open(os.path.join(home, 'db.json'), 'w'), indent=1)
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

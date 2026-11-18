@@ -77,8 +77,8 @@ def replay(flow, events):
                 seen.add(target)
                 target = flow[target].get('on_exhausted', 'STOP')
             st.pos = target
-            if target == sid and not ev.get('route') and not s.get('on_fail'):
-                st.status = 'blocked'
+            if ev.get('hold') or (target == sid and not ev.get('route') and not s.get('on_fail')):
+                st.pos, st.status = sid, 'blocked'     # 停在这一步，等人、维修窗口或工具包的修补版（16.5）
         elif t == 'reopen':
             st.confirms.pop(ev['target'], None)
             if ev.get('jump'):

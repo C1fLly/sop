@@ -1,0 +1,3 @@
+# 档案 fake 的受保护规范文件：目录 + 检查工具认得的配置文件名
+config/lint/**
+.fakelintrc*

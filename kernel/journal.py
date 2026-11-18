@@ -267,7 +267,7 @@ class _Writer(threading.Thread):
                     else:
                         st = self._stamp()
                         body = {k: v for k, v in it.items() if k != '_item'}
-                        name = f'events/{scope_dir(it["scope"])}/{time.time_ns():020d}-{st["id"][:8]}.json'
+                        name = f'events/{scope_dir(it["scope"])}/{time.time_ns():020d}-{st["eid"][:8]}.json'
                         files.append((name, {**body, **st}))
                 plan.append((box, done, err if err else files))
             writes = [f for _, _, fs in plan if isinstance(fs, list) for f in fs]
@@ -294,7 +294,7 @@ class _Writer(threading.Thread):
             done.set()
 
     def _stamp(self):
-        return {'id': uuid.uuid4().hex, 'ts': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'host': self.j.host, 'pid': os.getpid()}
+        return {'eid': uuid.uuid4().hex, 'ts': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'host': self.j.host, 'pid': os.getpid()}
 
     def _make_commit(self, tip, writes):
         g = self.j.git

@@ -1,0 +1,26 @@
+# 守门检查（设计书 6.4）：pull_request_target，定义和检出的都是主线；不检出、不运行 PR 里的代码，只查受保护路径。
+# 公开仓库从 2026-12-02 起要靠仓库的事件规则单独放开这个文件（W40）。
+name: sop-guard
+on:
+  pull_request_target:
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  guard:
+    name: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: 取主线 sop.json 声明的工具包版本，跑守门脚本
+        run: |
+          set -euo pipefail
+          read -r REPO VER < <(python3 -c 'import json; t = json.load(open("sop.json"))["toolkit"]; print(t["repo"], t["version"])')
+          git init -q /tmp/sop-toolkit
+          git -C /tmp/sop-toolkit fetch -q --depth 1 "$REPO" "$VER"
+          git -C /tmp/sop-toolkit checkout -q FETCH_HEAD
+          python3 /tmp/sop-toolkit/checks/guard/guard.py

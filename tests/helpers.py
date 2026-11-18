@@ -14,6 +14,13 @@ GIT_ID = {'GIT_AUTHOR_NAME': 'tester', 'GIT_AUTHOR_EMAIL': 'tester@example.inval
           'GIT_COMMITTER_NAME': 'tester', 'GIT_COMMITTER_EMAIL': 'tester@example.invalid'}
 
 
+def rmtree(p):
+    """删目录（封存成只读的状态目录要先恢复写权限）。"""
+    if os.path.exists(p):
+        subprocess.run(['chmod', '-R', 'u+w', str(p)], capture_output=True)
+        shutil.rmtree(p, ignore_errors=True)
+
+
 def sh(*args, cwd=None, env=None, check=True, input=None):
     e = {**os.environ, **GIT_ID, **(env or {})}
     p = subprocess.run([str(a) for a in args], cwd=cwd, env=e, capture_output=True, text=True, input=input)
@@ -36,7 +43,7 @@ class TempHome(unittest.TestCase):
     def tearDown(self):
         self._env.__exit__(None, None, None)
         if not os.environ.get('SOP_KEEP'):
-            shutil.rmtree(self.tmp, ignore_errors=True)
+            rmtree(self.tmp)
 
 
 @contextlib.contextmanager

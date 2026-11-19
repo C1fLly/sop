@@ -1,0 +1,45 @@
+"""`sop machine …`：机器级的命令（设计书 4.5、8.5）。不在项目里也能用。
+
+第三段一样一样补：doctor（体检，3-06）、setup（安装，3-12）、migrate（环境迁移，3-31 起）；clean 在第 3 期（W31）。
+"""
+from . import catalog
+
+LATER = {
+    'doctor': '体检还没做好（第 1 期第三段的任务 3-06）',
+    'setup': '安装还没做好（第 1 期第三段的任务 3-12）',
+    'migrate': '环境迁移还没做好（第 1 期第三段的任务 3-31、3-32）',
+    'clean': '清理磁盘排在第 3 期（W31）',
+}
+STEP_NAMES = {'M0': '第零步', 'M2': '安装工具', 'M5': '安装 wt'}
+
+HELP = '''sop machine 的用法：
+  sop machine tools     列出工具包要装的基础工具：装在哪、哪一步装、要不要管理员密码
+  sop machine doctor    体检（还没做好）
+  sop machine setup     安装（还没做好）
+  sop machine migrate   环境迁移（还没做好）'''
+
+
+def show_tools():
+    tools = catalog.load()
+    print(f'工具包要装的基础工具（{len(tools)} 样，清单在 machine/tools.toml）：')
+    for t in tools:
+        need = '要输管理员密码' if t.admin else '不用管理员密码'
+        ver = f'，版本 {t.version.removeprefix(">=")} 或更新' if t.version else ''
+        print(f'  {t.name}：{t.what}')
+        print(f'      装在 {t.location}{ver}；在「{STEP_NAMES[t.step]}」那一步装，{need}')
+    return 0
+
+
+def main(argv):
+    if not argv or argv[0] in ('help', '-h', '--help'):
+        print(HELP)
+        return 0
+    cmd = argv[0]
+    if cmd == 'tools' and len(argv) == 1:
+        return show_tools()
+    if cmd in LATER:
+        print(LATER[cmd])
+        return 2
+    print(f'不认识的命令：sop machine {" ".join(argv)}')
+    print(HELP)
+    return 2

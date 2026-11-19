@@ -1,0 +1,143 @@
+# 基础工具的唯一清单（设计书 4.4）。只读，工具包自带；体检（M1）、安装（M2、M5）都按它。
+#
+# 每一项的字段：
+#   name      名字（不重复，只用小写字母、数字和「-」）
+#   what      一句大白话：这是干什么的
+#   version   版本要求：">=1.2" 这样的最低版本；"" 表示装了就行、不看版本
+#   location  装在哪：「~/tools/…」，或者「系统软件包」（用 apt 装的，在系统盘上，4.3 列的例外）
+#   check     检查命令（bash 执行）。$SOP_TOOLS 是工具目录（平常就是 ~/tools）。
+#             退出码 0 算装了；输出里第一个像「1.2.3」的数当作版本号
+#   install   谁来装：「apt:<软件包名>」，或者「script:<machine/ 下的安装脚本>」
+#   admin     装的时候要不要管理员密码
+#   step      哪一步装（4.5）：M0 第零步、M2 安装工具、M5 安装 wt
+#   needs     要先装好哪几样（可不写）
+#
+# 版本下限先按第一段、第二段实际用过的版本写（W27、W36，本机）；3-08、3-09、3-22 真装时再核对。
+# 安装脚本由 3-08（nvm、uv、Node、pnpm）、3-09（免管理员 Docker）、3-22（wt）写；gh 的在 3-08 一起写。
+
+[[tool]]
+name = "git"
+what = "版本管理，所有代码和进度都靠它"
+version = ">=2.42"
+location = "系统软件包"
+check = "git --version"
+install = "apt:git"
+admin = true
+step = "M0"
+
+[[tool]]
+name = "curl"
+what = "下载工具，安装脚本用它取东西"
+version = ""
+location = "系统软件包"
+check = "curl --version"
+install = "apt:curl"
+admin = true
+step = "M0"
+
+[[tool]]
+name = "uv"
+what = "装 Python、运行工具包内核"
+version = ">=0.13"
+location = "~/tools/uv"
+check = '"$SOP_TOOLS/uv/bin/uv" --version'
+install = "script:install/uv.sh"
+admin = false
+step = "M0"
+needs = ["curl"]
+
+[[tool]]
+name = "bubblewrap"
+what = "受限环境：让 AI 读不到登录凭据（6.3）"
+version = ">=0.8"
+location = "系统软件包"
+check = "bwrap --version"
+install = "apt:bubblewrap"
+admin = true
+step = "M2"
+
+[[tool]]
+name = "uidmap"
+what = "免管理员 Docker 要的系统组件"
+version = ""
+location = "系统软件包"
+check = "dpkg-query -W -f '${Version}' uidmap"
+install = "apt:uidmap"
+admin = true
+step = "M2"
+
+[[tool]]
+name = "dbus-user-session"
+what = "免管理员 Docker 要的系统组件（用户级后台服务）"
+version = ""
+location = "系统软件包"
+check = "dpkg-query -W -f '${Version}' dbus-user-session"
+install = "apt:dbus-user-session"
+admin = true
+step = "M2"
+
+[[tool]]
+name = "nvm"
+what = "装和切换 Node"
+version = ">=0.40"
+location = "~/tools/nvm"
+check = '. "$SOP_TOOLS/nvm/nvm.sh" && nvm --version'
+install = "script:install/nvm.sh"
+admin = false
+step = "M2"
+needs = ["curl"]
+
+[[tool]]
+name = "node"
+what = "运行前端和靠 Node 运行的工具；版本由项目的 .nvmrc 指定，这里是默认的那一份"
+version = ">=24"
+location = "~/tools/nvm"
+check = '. "$SOP_TOOLS/nvm/nvm.sh" && node --version'
+install = "script:install/node.sh"
+admin = false
+step = "M2"
+needs = ["nvm"]
+
+[[tool]]
+name = "pnpm"
+what = "装 Node 的依赖包；缓存放 ~/tools/cache（用 pnpm_config_ 开头的变量指定，W36）"
+version = ">=12"
+location = "~/tools/nvm"
+check = '. "$SOP_TOOLS/nvm/nvm.sh" && pnpm --version'
+install = "script:install/pnpm.sh"
+admin = false
+step = "M2"
+needs = ["node"]
+
+[[tool]]
+name = "gh"
+what = "GitHub 的命令行：建仓库、开 PR、看检查结果"
+version = ">=2.60"
+location = "~/tools/gh"
+check = '"$SOP_TOOLS/gh/bin/gh" --version'
+install = "script:install/gh.sh"
+admin = false
+step = "M2"
+needs = ["curl"]
+
+[[tool]]
+name = "docker"
+what = "免管理员的 Docker：跑数据库、测试用的容器；数据在 ~/tools/docker/data"
+version = ">=29"
+location = "~/tools/docker"
+check = '"$SOP_TOOLS/docker/docker" --version'
+install = "script:install/docker-rootless.sh"
+admin = true
+step = "M2"
+needs = ["curl", "uidmap", "dbus-user-session"]
+
+[[tool]]
+name = "wt"
+what = "管项目的工作目录（每个功能、每张工单一个目录）；仓库是私有的，登录 GitHub 之后才装"
+version = ">=1.3"
+location = "~/tools/wt"
+check = 'bash "$SOP_TOOLS/wt/wt" --version'
+install = "script:install/wt.sh"
+admin = false
+step = "M5"
+needs = ["git", "gh"]

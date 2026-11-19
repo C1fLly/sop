@@ -124,6 +124,9 @@ def main(argv):
         if argv[:2] == ['self', 'bootstrap'] or argv[:2] == ['self', 'install']:
             from . import version
             return version.cli(argv[1:])
+        if argv[:1] == ['machine']:
+            from machine.cli import main as machine_main
+            return machine_main(argv[1:])
         p = Project(find_root(os.getcwd()))
         if not argv:
             return run_engine(p)

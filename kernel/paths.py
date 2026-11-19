@@ -19,6 +19,11 @@ def config_dir() -> pathlib.Path:
     return sop_home() / 'config'
 
 
+def tools_dir() -> pathlib.Path:
+    """所有工具的固定目录（4.3），平常是 ~/tools，也就是工具包根目录的上一层。自测用 SOP_TOOLS_DIR 换掉。"""
+    return pathlib.Path(os.environ.get('SOP_TOOLS_DIR') or sop_home().parent).expanduser()
+
+
 def versions_dir() -> pathlib.Path:
     return sop_home() / 'versions'
 

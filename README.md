@@ -13,7 +13,7 @@
 | `flows/` | 流程定义（TOML） |
 | `checks/` | 检查库，每个检查附「应通过」和「应报错」的样例 |
 | `prompts/` | 任务包模板 |
-| `machine/` | 机器层：基础工具清单 `tools.toml`、机器级配置和登记（`~/tools/sop/config/` 下的网络设置、工具位置、系统组件版本）、体检（分区判断、剩余空间、系统组件版本、工具在不在规定位置、AI 工具，`sop machine doctor`）、`sop machine` 命令 |
+| `machine/` | 机器层：基础工具清单 `tools.toml`、机器级配置和登记（`~/tools/sop/config/` 下的网络设置、工具位置、系统组件版本）、体检（分区判断、剩余空间、系统组件版本、工具在不在规定位置、AI 工具，`sop machine doctor`）、系统升级后推进流程之前先重跑隔离自检（`syscheck.py`）、`sop machine` 命令 |
 | `adapters/ai/` | AI 工具适配器（目前只有测试用的 `fake`） |
 | `profiles/` | 技术栈、端、部署档案（目前只有测试用的） |
 | `templates/` | 新项目仓库的初始文件、wt 用的模板 |

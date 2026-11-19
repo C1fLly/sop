@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""假的隔离自检（流程沙箱用，代替 runner/selftest.py；3-07）。sop 经环境变量 SOP_SELFTEST_CMD 找到它。
+
+剧本在 $SOP_FAKE_SELFTEST（JSON）：{"pass": true 或 false, "log": 记录文件, "journal": 项目远程的 Git 目录}。
+每跑一次往记录文件里加一行：跑的那一刻日志分支在哪个提交（流程沙箱拿它证明「先自检、后推进」）。
+没有剧本就报错退出：剧本没想到会自检，说明 sop 不该在这时候自检。"""
+import json
+import os
+import subprocess
+import sys
+
+path = os.environ.get('SOP_FAKE_SELFTEST')
+if not path or not os.path.exists(path):
+    print('假的隔离自检：没有剧本（这个剧本没想到会跑隔离自检）', file=sys.stderr)
+    sys.exit(2)
+plan = json.load(open(path))
+tip = subprocess.run(['git', '--git-dir', plan['journal'], 'rev-parse', '--verify', '--quiet', 'sop/journal'],
+                     capture_output=True, text=True).stdout.strip()
+with open(plan['log'], 'a') as f:
+    f.write(json.dumps({'journal_tip': tip, 'pass': plan['pass']}) + '\n')
+if plan['pass']:
+    print('符合   假的：看不到 ~/.ssh')
+    print('隔离自检：1 项，0 项不符合')
+    sys.exit(0)
+print('不符合 假的：bubblewrap 升级后，受限环境里看得到 ~/.ssh（应为 False，实际 True）')
+print('隔离自检：1 项，1 项不符合')
+sys.exit(1)

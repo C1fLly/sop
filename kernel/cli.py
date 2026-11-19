@@ -25,6 +25,9 @@ def human(p, interactive):
 
 
 def run_engine(p, interactive=False):
+    from machine import syscheck
+    if not syscheck.gate():        # 系统升级了先重跑隔离自检，没通过就停下（4.5，3-07）
+        return 1
     from .engine import Engine
     st = Engine(p, human(p, interactive), adapter()).run()
     return 0 if st in ('done', 'waiting', 'idle') else (3 if st == 'busy' else 1)

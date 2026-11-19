@@ -4,7 +4,10 @@
   版本就是这个提交的编号；可以再提交几个变体（修补版、大版本），用来演工具包升级（W18）。
 - 项目的远程：本机裸仓库，main 上是新项目的初始内容（templates/project 加 sop.json 等），另有日志分支。
 - 项目根：用 wt init --url 建（带 WT_TEMPLATE 指向工具包的模板），和真的一样是裸仓库加工作目录。
-- 剧本：假 AI（SOP_FAKE_SCRIPT）、档案 fake 的门禁（SOP_FAKE_GATE）、人的回答（SOP_HUMAN_SCRIPT）、假 gh 的检查结果（rules.json）。
+- 剧本：假 AI（SOP_FAKE_SCRIPT）、档案 fake 的门禁（SOP_FAKE_GATE）、人的回答（SOP_HUMAN_SCRIPT）、假 gh 的检查结果（rules.json）、
+  假的隔离自检（SOP_FAKE_SELFTEST，3-07；没给剧本时一跑就报错）。
+- 这台「电脑」的隔离自检已经通过过：系统组件现在的版本先记进登记（config/system.json），所以平常 sop 不会自检；
+  要演系统升级，就把登记里的某一样改成旧的（set_registered）。
 """
 import json
 import os
@@ -14,7 +17,8 @@ import signal
 import subprocess
 import sys
 
-from tests.helpers import REPO, sh
+from machine import components, config
+from tests.helpers import REPO, mock_env, sh
 
 FAKES = REPO / 'tests' / 'fakes'
 PNG_A = '89504e470d0a1a0a' + '00' * 8 + '41'     # 假的「图片」：只要内容不同就行
@@ -50,6 +54,8 @@ class World:
         self.remote = self.github / f'{name}.git'
         self.visibility = visibility
         self.script = {}; self.gate = {}; self.human = {}; self.rules = []
+        self.selftest = None                 # 假的隔离自检：None 是剧本没想到会自检；{'pass': True/False}
+        self.selftest_log = self.scripts / 'selftest.log'
         self.save_scripts()
         self.version = self.publish_toolkit('初始版本', tweak)
         self._make_project()
@@ -61,13 +67,19 @@ class World:
                 'SOP_FAKE_SCRIPT': str(self.scripts / 'ai.json'), 'SOP_FAKE_GATE': str(self.scripts / 'gate.json'),
                 'SOP_HUMAN_SCRIPT': str(self.scripts / 'human.json'), 'SOP_AI': 'fake', 'SOP_POLL_SECONDS': '0',
                 'SOP_TOOLKIT_REPO': str(self.toolkit_remote), 'GIT_CONFIG_GLOBAL': str(self.tmp / 'gitconfig'),
-                'GIT_CONFIG_NOSYSTEM': '1', 'SOP_NO_NOTIFY': '1', 'SOP_PYTHON': sys.executable, 'SOP_CHECK_DEADLINE': '60'}
+                'GIT_CONFIG_NOSYSTEM': '1', 'SOP_NO_NOTIFY': '1', 'SOP_PYTHON': sys.executable, 'SOP_CHECK_DEADLINE': '60',
+                'SOP_SELFTEST_CMD': str(FAKES / 'selftest' / 'selftest'), 'SOP_FAKE_SELFTEST': str(self.scripts / 'selftest.json')}
 
     def save_scripts(self):
         (self.scripts / 'ai.json').write_text(json.dumps(self.script, ensure_ascii=False, indent=1))
         (self.scripts / 'gate.json').write_text(json.dumps(self.gate, ensure_ascii=False, indent=1))
         (self.scripts / 'human.json').write_text(json.dumps(self.human, ensure_ascii=False, indent=1))
         (self.fakegh / 'rules.json').write_text(json.dumps(self.rules, ensure_ascii=False, indent=1))
+        st = self.scripts / 'selftest.json'
+        if self.selftest is None:
+            st.unlink(missing_ok=True)
+        else:
+            st.write_text(json.dumps({**self.selftest, 'log': str(self.selftest_log), 'journal': str(self.remote)}))
 
     def git_env(self):
         return {'GIT_CONFIG_GLOBAL': str(self.tmp / 'gitconfig'), 'GIT_CONFIG_NOSYSTEM': '1'}
@@ -126,6 +138,30 @@ class World:
         r = self.kernel('init-project')
         if r.returncode:
             raise RuntimeError(f'初始化失败：{r.stdout}\n{r.stderr}')
+        # 机器准备（M6）时隔离自检通过过：记下这台电脑现在的系统组件版本（3-07）
+        with self._sop_env():
+            components.record()
+
+    def _sop_env(self):
+        return mock_env({'SOP_HOME': str(self.home), 'SOP_RUNTIME_DIR': str(self.tmp / 'run')})
+
+    # ---------- 系统组件登记（3-07） ----------
+    def registered(self):
+        with self._sop_env():
+            return config.system().get('components', {})
+
+    def set_registered(self, **parts):
+        """把登记里的几样改掉，演「上次自检通过之后系统升级了」。"""
+        with self._sop_env():
+            config.record_system({**config.system()['components'], **parts})
+
+    def selftest_runs(self):
+        if not self.selftest_log.exists():
+            return []
+        return [json.loads(x) for x in self.selftest_log.read_text().splitlines()]
+
+    def journal_tip(self):
+        return self.rgit('rev-parse', 'sop/journal')
 
     # ---------- 执行 sop ----------
     def kernel(self, *args, timeout=600, env=None):

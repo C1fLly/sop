@@ -107,6 +107,39 @@ class TestGroupCommit(JournalCase):
         self.assertEqual(merges, '', '日志分支的历史应当是一条直线')
 
 
+class TestWtFetch(JournalCase):
+    """3-53：wt 拉取（git fetch --all）会改 refs/remotes/origin/ 下的所有指针；事件日志不能和它改同一个指针。"""
+
+    def test_journal_leaves_origin_refs_alone(self):
+        self.j.append(J.event('project', 'P0', 'done'))
+        self.j.fetch()
+        self.j.read(['project'])
+        self.assertFalse(subprocess.run(['git', '--git-dir', str(self.gitdir), 'show-ref', '--verify', '--quiet',
+                                         'refs/remotes/origin/sop/journal']).returncode == 0,
+                         '事件日志自己的指针不应放在 refs/remotes/origin/ 下')
+
+    def test_fetch_all_while_writing(self):
+        stop, fails, n = threading.Event(), [], [0]
+
+        def fetch_all():          # 像 wt new 那样拉取
+            while not stop.is_set():
+                p = subprocess.run(['git', '--git-dir', str(self.gitdir), 'fetch', '--all', '--prune', '--quiet'],
+                                   capture_output=True, text=True)
+                n[0] += 1
+                if p.returncode:
+                    fails.append(p.stderr.strip()[-200:])
+        t = threading.Thread(target=fetch_all)
+        t.start()
+        try:
+            for i in range(80):
+                self.j.append(J.event('project', f'X{i}', 'note'))
+        finally:
+            stop.set(); t.join()
+        self.assertGreater(n[0], 20)
+        self.assertEqual(fails[:3], [], f'拉取 {n[0]} 次里失败 {len(fails)} 次')
+        self.assertEqual(len(self.j.read(['project'])), 80)
+
+
 class TestReleases(JournalCase):
     def test_seq_and_latest(self):
         self.j.append(J.release('feat/a-1', 'docs/baseline/home.png', 'b1' * 20, 'T11'))

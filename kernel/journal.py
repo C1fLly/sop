@@ -5,6 +5,9 @@
 - 一个 sop 进程里只有一个写入线程。每个事件都等推上去了，发出它的那一步才往下走；
   同一时刻排着的几个事件合成一个提交、一次推送（v0.9 定）。
 - 断网时写不了，流程停下，不在本地攒着（Y4）。
+- 本机记远程日志到哪儿的指针是 refs/sop/journal，不放在 refs/remotes/origin/ 下：wt 拉取时（git fetch --all）会改
+  refs/remotes/origin/ 下的所有指针，两边同时改一个指针，wt 那边就报「incorrect old value」停下（3-53）。
+  所以取回加 --refmap=、推送直接推到远程地址，Git 不会顺手去改 refs/remotes/origin/sop/journal；那个指针只归 wt。
 
 文件的放法：
   events/project/<纳秒时间>-<随机>.json          项目级的事件
@@ -27,7 +30,7 @@ from .gitx import Git, GitError
 
 BRANCH = 'sop/journal'
 REF = f'refs/heads/{BRANCH}'
-TRACK = f'refs/remotes/origin/{BRANCH}'
+TRACK = 'refs/sop/journal'     # 不放在 refs/remotes/origin/ 下，见上
 WHO = {'GIT_AUTHOR_NAME': 'sop', 'GIT_AUTHOR_EMAIL': 'sop@localhost', 'GIT_COMMITTER_NAME': 'sop',
        'GIT_COMMITTER_EMAIL': 'sop@localhost'}
 
@@ -93,8 +96,15 @@ class Journal:
         self.host = socket.gethostname()
         n = test_die_before_push if test_die_before_push is not None else os.environ.get('SOP_TEST_DIE_BEFORE_PUSH')
         self._die_at = int(n) if n else None
+        self._url = None
         self.pushes = 0          # 推送了几次（测试和统计用）
         self.retries = 0         # 被抢先重来了几次
+
+    def push_url(self):
+        """推送直接用远程地址，不用 origin 这个名字：用名字推送，Git 会顺手更新 refs/remotes/origin/sop/journal（见文件开头）。"""
+        if self._url is None:
+            self._url = self.git('remote', 'get-url', '--push', 'origin')
+        return self._url
 
     # ---------- 建立 ----------
     def init_branch(self):
@@ -104,13 +114,13 @@ class Journal:
             return
         empty = self.git('hash-object', '-t', 'tree', '-w', '--stdin', input='')
         c = self.git('commit-tree', empty, '-m', '建立日志分支', env=WHO)
-        self.git('push', '-q', 'origin', f'{c}:{REF}')
+        self.git('push', '-q', self.push_url(), f'{c}:{REF}')
         self.git('update-ref', TRACK, c)
 
     # ---------- 读 ----------
     def fetch(self):
         for i in range(20):
-            p = self.git.run('fetch', '-q', '--no-write-fetch-head', 'origin', f'+{REF}:{TRACK}', check=False)
+            p = self.git.run('fetch', '-q', '--no-write-fetch-head', '--refmap=', 'origin', f'+{REF}:{TRACK}', check=False)
             if p.returncode == 0:
                 return
             if any(m in p.stderr for m in ('cannot lock ref', 'unable to update local ref', 'incorrect old value')):
@@ -277,7 +287,7 @@ class _Writer(threading.Thread):
             self.j.pushes += 1
             if self.j._die_at is not None and self.j.pushes >= self.j._die_at:
                 os._exit(137)    # 测试用：模拟 sop 在推送之前被强制结束
-            p = g.run('push', '-q', '--porcelain', 'origin', f'{commit}:{REF}', check=False)
+            p = g.run('push', '-q', '--porcelain', self.j.push_url(), f'{commit}:{REF}', check=False)
             if p.returncode == 0:
                 g.run('update-ref', TRACK, commit, check=False)   # 本机另一个进程同时在更新也没关系，下次取回会补上
                 break

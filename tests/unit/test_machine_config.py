@@ -231,7 +231,7 @@ class TestMachineCli(TempHome):
         p = self.sop('machine')
         self.assertEqual(p.returncode, 0)
         self.assertIn('sop machine tools', p.stdout)
-        for cmd, task in (('doctor', '3-06'), ('setup', '3-12'), ('migrate', '3-31')):
+        for cmd, task in (('setup', '3-12'), ('migrate', '3-31')):
             p = self.sop('machine', cmd)
             self.assertEqual(p.returncode, 2)
             self.assertIn(task, p.stdout)

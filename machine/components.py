@@ -114,7 +114,8 @@ def collect(run=subprocess.run, uname=os.uname, apparmor=APPARMOR, proc_sys=PROC
 
 
 def record(current=None):
-    """把这一次看到的记进登记（整份换掉）。体检（3-06）、隔离自检通过之后（3-07、M6）调用。"""
+    """把这一次看到的记进登记（整份换掉）。只在隔离自检通过之后调用（3-07、M6）。
+    体检（3-06）不调用：体检要是记了，系统升级后先跑一次体检，sop 启动时就看不出变化、跳过了隔离自检。"""
     return config.record_system(collect() if current is None else current)
 
 

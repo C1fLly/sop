@@ -19,6 +19,7 @@ NAME = re.compile(r'^[a-z0-9][a-z0-9-]{0,40}$')
 STEPS = ('M0', 'M2', 'M5')
 SYSTEM = '系统软件包'
 VERSION_REQ = re.compile(r'^>=(\d+(?:\.\d+)*)$')
+COMMAND = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._+-]{0,40}$')
 VERSION_IN_TEXT = re.compile(r'(?:\b\d+:)?(\d+(?:\.\d+)+|\d+)')   # 系统软件包的版本前面可能带「1:」，跳过
 FIELDS = {'name': str, 'what': str, 'version': str, 'location': str, 'check': str,
           'install': str, 'admin': bool, 'step': str}
@@ -39,6 +40,8 @@ class Tool:
     admin: bool
     step: str
     needs: tuple = ()
+    command: str = ''          # 命令名：系统软件包靠它找实际在哪；工具包自己装的，体检按它在 PATH 里找另外几份
+    elsewhere: tuple = ()      # 别的装法常放的位置（~/ 开头或绝对路径），体检看有没有另一份（4.3）
 
     @property
     def system_package(self):
@@ -80,7 +83,7 @@ def _check_entry(i, d, seen):
             raise CatalogError(f'{where}：少了「{k}」')
         if not isinstance(d[k], typ):
             raise CatalogError(f'{where}：「{k}」的写法不对')
-    extra = set(d) - set(FIELDS) - {'needs'}
+    extra = set(d) - set(FIELDS) - {'needs', 'command', 'elsewhere'}
     if extra:
         raise CatalogError(f'{where}：不认识的字段 {sorted(extra)}')
     if not NAME.match(d['name']):
@@ -110,7 +113,16 @@ def _check_entry(i, d, seen):
     for n in needs:
         if n not in seen:
             raise CatalogError(f'{where}：要先装的「{n}」不在它前面')
-    return Tool(**{k: d[k] for k in FIELDS}, needs=tuple(needs))
+    command = d.get('command', '')
+    if not isinstance(command, str) or (command and not COMMAND.match(command)):
+        raise CatalogError(f'{where}：command 只写一个命令名')
+    elsewhere = d.get('elsewhere', [])
+    if not isinstance(elsewhere, list) or not all(isinstance(x, str) and (x.startswith('~/') or x.startswith('/'))
+                                                  for x in elsewhere):
+        raise CatalogError(f'{where}：elsewhere 要写成「~/」或「/」开头的路径的列表')
+    if elsewhere and kind == 'apt':
+        raise CatalogError(f'{where}：系统软件包只有 apt 那一份，不写 elsewhere')
+    return Tool(**{k: d[k] for k in FIELDS}, needs=tuple(needs), command=command, elsewhere=tuple(elsewhere))
 
 
 def load(path=DEFAULT):

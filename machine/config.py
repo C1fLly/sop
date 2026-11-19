@@ -154,13 +154,31 @@ def tools():
 def record_tool(name, *, path, version, kind='base', in_place=True, others=None, **extra):
     """登记一样工具：在哪（path）、什么版本、是不是规定位置那一份（in_place），
     另有几份不在规定位置的（others：[{path, size_bytes, on_system_disk}]）。extra 放适配器要记的别的项。"""
-    if kind not in TOOL_KINDS:
-        raise ValueError(f'工具的种类只能是 {TOOL_KINDS}')
-    entry = {'path': str(path), 'version': version, 'kind': kind, 'in_place': bool(in_place),
-             'others': list(others or []), 'checked_at': now(), **extra}
+    entry = tool_entry(path=path, version=version, kind=kind, in_place=in_place, others=others, **extra)
     with editing('tools') as d:
         d.setdefault('tools', {})[name] = entry
     return entry
+
+
+def tool_entry(*, path, version, kind='base', in_place=True, others=None, **extra):
+    if kind not in TOOL_KINDS:
+        raise ValueError(f'工具的种类只能是 {TOOL_KINDS}')
+    return {'path': str(path), 'version': version, 'kind': kind, 'in_place': bool(in_place),
+            'others': list(others or []), 'checked_at': now(), **extra}
+
+
+KEEP_ON_RECHECK = ('drilled_version',)   # 别处写的项（真实 AI 演练写的版本，10.1），体检重新登记时留着
+
+
+def record_tools(entries):
+    """一次登记好几样（体检用）：{名字: tool_entry(...)}。原来登记里有、这次没给的工具不动；
+    KEEP_ON_RECHECK 那几项这次没给就留原来的。"""
+    with editing('tools') as d:
+        reg = d.setdefault('tools', {})
+        for name, entry in entries.items():
+            old = reg.get(name) or {}
+            reg[name] = {**{k: old[k] for k in KEEP_ON_RECHECK if k in old}, **entry}
+    return d['tools']
 
 
 def forget_tool(name):

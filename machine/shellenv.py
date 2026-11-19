@@ -41,7 +41,8 @@ VARIABLES = (
 # 放到 PATH 最前面；Node 和 pnpm 由 nvm.sh 放。pnpm 12 全局装的命令在 $PNPM_HOME/bin（不是 $PNPM_HOME）。
 # 免管理员 Docker 的命令（3-09）：敲 docker 用规定位置的那个程序；连哪一份 Docker 看默认指向（context），
 # 电脑上另有一份时安装脚本把默认指向切回原来那份，所以敲 docker 看到的还是原来的（4.8）
-PATH_DIRS = ('{T}/uv/bin', '{T}/gh/bin', '{T}/pnpm/bin', '{T}/docker/bin')
+# 第零步（3-13）：~/tools/sop 里的启动器 sop，新开的终端敲 sop 就能用
+PATH_DIRS = ('{T}/uv/bin', '{T}/gh/bin', '{T}/pnpm/bin', '{T}/docker/bin', '{T}/sop')
 CACHE_DIRS = ('cache/uv', 'cache/npm', 'cache/pnpm')
 # 网络设置里的软件源（4.4「安装脚本按它配置各工具」）：设了才写
 REGISTRIES = {
@@ -99,7 +100,7 @@ def environ(tools_dir=None, net=None, base=None):
 def block(tools_dir=None, net=None):
     """终端启动文件里那一段的全文（带开头结尾标记，最后有换行）。"""
     lines = [BEGIN,
-             '# 告诉终端去 ~/tools 下找工具包装的工具（nvm 和它装的 Node、pnpm，uv 和它装的 Python，gh，免管理员的 Docker），',
+             '# 告诉终端去 ~/tools 下找工具包装的工具（sop，nvm 和它装的 Node、pnpm，uv 和它装的 Python，gh，免管理员的 Docker），',
              '# 各工具的缓存放 ~/tools/cache 下（设计书 4.3）。'] + \
             [f'export {k}="{v}"' for k, v in variables(tools_dir, net, for_shell=True)] + \
             ['[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"',

@@ -25,13 +25,37 @@ def install(repo, version):
     return _install(repo, version, paths.versions_dir())
 
 
+# 启动器 ~/tools/sop/sop（3.2）。内核用 uv 执行（3.3），用规定位置那份 uv（~/tools/uv/bin/uv；第零步刚装好时它还不在 PATH 里，
+# 电脑上另有一份旧 uv 时 PATH 里先找到的可能是旧的），没有才用 PATH 里的；uv 的缓存放 ~/tools/cache/uv（4.3）。
+# SOP_PYTHON 只在自测里用
+LAUNCHER_SH = '''#!/bin/sh
+# SOP 工具包的启动器（设计书 3.2）。由 sop self install 和第零步（bootstrap.sh）写，不要手改
+here=$(cd "$(dirname "$0")" && pwd)
+tools=${SOP_TOOLS_DIR:-$(dirname "$here")}
+if [ -n "${SOP_PYTHON:-}" ]; then exec "$SOP_PYTHON" -I "$here/launcher.py" "$@"; fi
+uv=$tools/uv/bin/uv
+[ -x "$uv" ] || uv=uv
+export UV_CACHE_DIR="$tools/cache/uv" UV_PYTHON_INSTALL_DIR="$tools/uv/python"
+exec "$uv" run -q --no-project --python 3.14 python -I "$here/launcher.py" "$@"
+'''
+
+
 def write_launcher(version):
     home = paths.sop_home()
-    shutil.copy(paths.versions_dir() / version / 'kernel' / 'launcher.py', home / 'launcher.py')
-    (home / 'sop').write_text('#!/bin/sh\n# SOP 工具包的启动器（3.2）。内核用 uv 执行（3.3）；SOP_PYTHON 只在自测里用\n'
-                              'exec ${SOP_PYTHON:-uv run --no-project --python 3.14 python} -I "$(dirname "$0")/launcher.py" "$@"\n')
-    os.chmod(home / 'sop', 0o755)
-    (paths.versions_dir() / 'latest').write_text(version)
+    _write_if_changed(home / 'launcher.py', (paths.versions_dir() / version / 'kernel' / 'launcher.py').read_text())
+    _write_if_changed(home / 'sop', LAUNCHER_SH, 0o755)
+    _write_if_changed(paths.versions_dir() / 'latest', version)
+
+
+def _write_if_changed(f, text, mode=0o644):
+    """内容没变就不写（第零步可以重复跑，修改时间也不动）。"""
+    try:
+        if f.read_text() == text and (f.stat().st_mode & 0o777) == mode:
+            return
+    except FileNotFoundError:
+        pass
+    f.write_text(text)
+    os.chmod(f, mode)
 
 
 def same_tree(a, b, sub):

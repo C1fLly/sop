@@ -1,0 +1,306 @@
+#!/bin/bash
+# SOP 工具包的第零步（设计书 4.2、4.5 的 M0；任务 3-13）。只用 bash 和系统自带的东西。
+#
+# 小白手册首页的那一条命令（Ubuntu 26.04 桌面版自带 wget、不带 curl 和 git，所以用 wget 取这个脚本）：
+#   wget --no-hsts -qO /tmp/sop-bootstrap.sh <工具包仓库>/bootstrap.sh && bash /tmp/sop-bootstrap.sh
+#
+# 做的事，按顺序：
+#   1. 看系统：只支持 Ubuntu 26.04（4.1），不许用管理员账号跑（会装进 /root）。
+#   2. 网络：读已有的代理设置（环境变量、桌面的网络设置、/etc/environment、apt 的设置），试连 GitHub、Ubuntu 软件源、
+#      工具包仓库，把结果摆给小白确认；探测不出来、连不上才问代理地址（「不知道就直接回车」）。
+#   3. 缺 git、curl 才用 apt 装（要管理员密码：先说一句，再由系统问）。
+#   4. 把工具包取到 ~/tools/sop/versions/<提交编号>（Git 取最新的 main）。
+#   5. 用工具包里的安装脚本把 uv 装到 ~/tools/uv。
+#   6. 报告主目录在哪个分区（只报告、不问，4.3）。
+#   7. 写网络设置 ~/tools/sop/config/network.json、启动器 ~/tools/sop/sop、~/.bashrc 末尾工具包那一段（让新开的终端找得到 sop 和 uv）。
+#   8. 出口检查：sop 能运行。最后提示执行 sop machine setup。
+# 可以重复跑：已经有的跳过，内容没变的文件不重写。
+#
+# 选项（自测、虚拟机验证用；小白不用）：
+#   --repo <地址>    工具包仓库（也可以用环境变量 SOP_TOOLKIT_REPO）。3-41 在 GitHub 上建好仓库后，下面的 DEFAULT_REPO 改成它
+#   --yes            探测到的网络情况直接当成对的，不问
+#   --proxy <地址>   不探测，直接用这个代理（给空的就是不用代理）
+set -uo pipefail
+
+DEFAULT_REPO=''     # 3-41：改成 https://github.com/C1fLly/sop.git
+GITHUB_URL=${SOP_BOOTSTRAP_GITHUB:-https://github.com/}
+ETC_ENV=${SOP_BOOTSTRAP_ETC_ENV:-/etc/environment}
+OS_RELEASE=${SOP_BOOTSTRAP_OS_RELEASE:-/etc/os-release}
+SUDO_PROMPT='[sudo] 请输入 %u 的登录密码：'
+NO_NET='可以问一下懂网络的人这台电脑上网用的代理地址，再重新执行这一步；完全连不上外网的，用离线包（小白手册「完全连不上网」那一节）'
+PROXY_RE='^https?://[^[:space:]/:]+(:[0-9]{1,5})?/?$'   # 只认网页代理：系统自带的 wget 不支持 socks
+
+say() { printf '%s\n' "$*"; }
+step() { printf '\n== %s ==\n' "$*"; }
+die() { printf '\n没做完：%s\n' "$*" >&2; exit 1; }
+
+# ---------- 问小白 ----------
+# 从标准输入读（手册里的命令是先下载、再 bash 运行，标准输入就是终端）。读不到（没有输入）算直接回车。
+ask() {
+  local ans=
+  printf '%s' "$1" >&2
+  read -r ans || ans=
+  printf '%s' "$ans"
+}
+
+# ---------- 代理 ----------
+# 小白输入的代理地址：去掉两头空白，没写 http:// 的补上。写法不对返回 1。
+normalize_proxy() {
+  local p=$1
+  p=${p#"${p%%[![:space:]]*}"}; p=${p%"${p##*[![:space:]]}"}
+  [ -z "$p" ] && return 0
+  [[ $p == *://* ]] || p=http://$p
+  [[ $p =~ $PROXY_RE ]] || return 1
+  printf '%s' "${p%/}"
+}
+
+# 读已有的代理设置。输出三行：代理、不走代理的地址、从哪读到的（没有就是三个空行）。
+detect_proxy() {
+  local p np
+  # 1. 环境变量
+  p=${https_proxy:-${HTTPS_PROXY:-${http_proxy:-${HTTP_PROXY:-}}}}
+  if [ -n "$p" ]; then
+    printf '%s\n%s\n%s\n' "$p" "${no_proxy:-${NO_PROXY:-}}" '环境变量'; return
+  fi
+  # 2. 桌面（GNOME）的网络设置里手动填的代理
+  if command -v gsettings >/dev/null 2>&1 && [ "$(gsettings get org.gnome.system.proxy mode 2>/dev/null)" = "'manual'" ]; then
+    local h port
+    for kind in https http; do
+      h=$(gsettings get "org.gnome.system.proxy.$kind" host 2>/dev/null | tr -d "'")
+      port=$(gsettings get "org.gnome.system.proxy.$kind" port 2>/dev/null)
+      if [ -n "$h" ] && [ "${port:-0}" != 0 ]; then
+        p=http://$h:$port
+        np=$(gsettings get org.gnome.system.proxy ignore-hosts 2>/dev/null | tr -d "[]' ")
+        printf '%s\n%s\n%s\n' "$p" "$np" '桌面的网络设置'; return
+      fi
+    done
+  fi
+  # 3. /etc/environment
+  if [ -r "$ETC_ENV" ]; then
+    p=$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?(https_proxy|HTTPS_PROXY|http_proxy|HTTP_PROXY)=["'\'']?([^"'\'']*)["'\'']?[[:space:]]*$/\3/p' "$ETC_ENV" | head -1)
+    np=$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?(no_proxy|NO_PROXY)=["'\'']?([^"'\'']*)["'\'']?[[:space:]]*$/\3/p' "$ETC_ENV" | head -1)
+    if [ -n "$p" ]; then printf '%s\n%s\n%s\n' "$p" "$np" "$ETC_ENV"; return; fi
+  fi
+  # 4. apt 的设置
+  if command -v apt-config >/dev/null 2>&1; then
+    p=$(apt-config dump 2>/dev/null | sed -nE 's/^Acquire::(https?)::Proxy "([^"]+)";$/\2/p' | grep -iv '^DIRECT$' | head -1)
+    if [ -n "$p" ]; then printf '%s\n%s\n%s\n' "$p" '' 'apt 的设置'; return; fi
+  fi
+  printf '\n\n\n'
+}
+
+# 系统用的 Ubuntu 软件源的地址（第一个）
+apt_source() {
+  local u
+  u=$(cat /etc/apt/sources.list.d/*.sources 2>/dev/null | sed -nE 's/^URIs:[[:space:]]*([^[:space:]]+).*/\1/p' | head -1)
+  [ -n "$u" ] || u=$(sed -nE 's/^deb[[:space:]]+(\[[^]]*\][[:space:]]+)?(https?:[^[:space:]]+).*/\2/p' /etc/apt/sources.list 2>/dev/null | head -1)
+  printf '%s' "${u:-http://archive.ubuntu.com/ubuntu/}"
+}
+
+# reach 网址 代理 不走代理的地址：连得上返回 0。用 wget（系统自带）；不留 ~/.wget-hsts
+reach() {
+  local -a e=(env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u all_proxy -u ALL_PROXY -u no_proxy -u NO_PROXY)
+  [ -n "$2" ] && e+=(http_proxy="$2" https_proxy="$2" HTTP_PROXY="$2" HTTPS_PROXY="$2")
+  [ -n "$3" ] && e+=(no_proxy="$3" NO_PROXY="$3")
+  "${e[@]}" wget --no-hsts -q --spider -T "${SOP_BOOTSTRAP_TIMEOUT:-10}" -t 2 "$1" >/dev/null 2>&1
+}
+
+# 工具包仓库的网址变成可以试连的（git 地址去掉 .git 后面的部分不影响能不能连上主机，取到主机名为止）
+repo_probe_url() {
+  case $1 in
+    http://*|https://*) printf '%s' "$(printf '%s' "$1" | sed -E 's#^(https?://[^/]+).*#\1/#')" ;;
+    *) printf '' ;;      # 本机目录（自测）不用试
+  esac
+}
+
+# 试连一遍，打印结果；全连上返回 0。用全局的 PROXY、NOPROXY、TARGETS（名字|网址）
+probe_all() {
+  local ok=0 t name url
+  for t in "${TARGETS[@]}"; do
+    name=${t%%|*}; url=${t#*|}
+    if reach "$url" "$PROXY" "$NOPROXY"; then say "  $name（$url）：连得上"
+    else say "  $name（$url）：连不上"; ok=1; fi
+  done
+  return $ok
+}
+
+show_network() {
+  if [ -n "$PROXY" ]; then
+    say "  代理：$PROXY（$SOURCE）"
+    [ -n "$NOPROXY" ] && say "  不走代理的地址：$NOPROXY"
+  else
+    say "  代理：不用代理（$SOURCE）"
+  fi
+}
+
+# 网络这一步：探测、试连、摆给小白确认；不对或连不上才问代理。定下来的放在 PROXY、NOPROXY、SOURCE
+network_step() {
+  local det p np src ans tries=0 last_ok=
+  if [ -n "${OPT_PROXY+x}" ]; then
+    PROXY=$(normalize_proxy "$OPT_PROXY") || die "代理地址的写法不对：$OPT_PROXY（要像 http://127.0.0.1:7890）"
+    NOPROXY=${no_proxy:-${NO_PROXY:-}}; SOURCE='命令行给的'; SOURCE_KIND=user
+  else
+    mapfile -t det < <(detect_proxy)
+    p=${det[0]:-}; np=${det[1]:-}; src=${det[2]:-}
+    if [ -n "$p" ]; then
+      PROXY=$(normalize_proxy "$p") || { say "  读到的代理设置看不懂：$p（$src），当成没有"; PROXY=; }
+      NOPROXY=$np; SOURCE="从$src读到的"
+    else
+      PROXY=; NOPROXY=${no_proxy:-${NO_PROXY:-}}; SOURCE='没找到代理设置'
+    fi
+    SOURCE_KIND=detected
+  fi
+  while :; do
+    show_network
+    if probe_all; then
+      last_ok=1
+      [ -n "$OPT_YES" ] && return 0
+      ans=$(ask '这样对吗？对就直接回车；不对就输入 n 再回车：')
+      case $ans in n|N|不对|不) ;; *) return 0 ;; esac
+    else
+      last_ok=
+      [ -n "$OPT_YES" ] && die "连不上上面那几处。$NO_NET"
+      say "有连不上的。"
+    fi
+    tries=$((tries + 1))
+    [ $tries -gt 3 ] && die "试了几次还是连不上。$NO_NET"
+    while :; do
+      ans=$(ask '请输入代理地址（像 http://127.0.0.1:7890）。不知道就直接回车：')
+      if p=$(normalize_proxy "$ans"); then break; fi
+      say "  写法不对：$ans"
+    done
+    if [ -z "$p" ] && [ -z "$PROXY" ]; then
+      [ -n "$last_ok" ] && { SOURCE='你确认的'; SOURCE_KIND=user; return 0; }   # 本来就不用代理、也连得上
+      die "不用代理连不上。$NO_NET"
+    fi
+    PROXY=$p; SOURCE='你填的'; SOURCE_KIND=user
+    [ -n "$PROXY" ] && [ -z "$NOPROXY" ] && NOPROXY='localhost,127.0.0.1,::1'
+  done
+}
+
+# 之后所有下载（apt、git、uv）用定下来的代理
+use_network() {
+  unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
+  if [ -n "$PROXY" ]; then export http_proxy=$PROXY https_proxy=$PROXY HTTP_PROXY=$PROXY HTTPS_PROXY=$PROXY; fi
+  if [ -n "$NOPROXY" ]; then export no_proxy=$NOPROXY NO_PROXY=$NOPROXY; fi
+}
+
+# ---------- 各步 ----------
+check_system() {
+  [ "$(id -u)" != 0 ] || die "请用自己平常登录的账号执行，不要用管理员账号（sudo 或 root）：工具包要装进你自己的主目录"
+  local id= ver=
+  [ -r "$OS_RELEASE" ] && { id=$(. "$OS_RELEASE"; echo "${ID:-}"); ver=$(. "$OS_RELEASE"; echo "${VERSION_ID:-}"); }
+  [ "$id" = ubuntu ] && [ "$ver" = 26.04 ] || die "工具包只支持 Ubuntu 26.04（这台电脑是 ${id:-看不出来} ${ver}）"
+  case $(uname -m) in x86_64|aarch64) ;; *) die "不支持这种处理器：$(uname -m)" ;; esac
+  command -v python3 >/dev/null 2>&1 || die "系统里没有 python3（Ubuntu 26.04 本来自带）"
+}
+
+install_apt() {
+  local need=() pkg
+  for pkg in git curl; do command -v "$pkg" >/dev/null 2>&1 || need+=("$pkg"); done
+  if [ ${#need[@]} -eq 0 ]; then say "git、curl 都有了，跳过"; return 0; fi
+  say "接下来用系统的软件包装 ${need[*]}（git 管代码和进度，curl 下载工具），要管理员权限。"
+  say "系统会问这台电脑的登录密码（就是开机登录用的那个），输入时屏幕上什么都不显示，输完按回车。"
+  local -a e=()
+  [ -n "$PROXY" ] && e+=(http_proxy="$PROXY" https_proxy="$PROXY")
+  [ -n "$NOPROXY" ] && e+=(no_proxy="$NOPROXY")
+  sudo -p "$SUDO_PROMPT" env "${e[@]}" DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 sh -c \
+    'apt-get -o DPkg::Lock::Timeout=300 update -qq && apt-get -o DPkg::Lock::Timeout=300 install -y -qq --no-install-recommends "$@" >/dev/null' \
+    sop-apt "${need[@]}" </dev/null \
+    || die "${need[*]} 没装上（密码不对、这个账号不能用 sudo，或者连不上软件源）"
+  say "${need[*]} 装好了"
+}
+
+# 取工具包：Git 取最新的 main，放到 versions/<提交编号>；已经有这个版本就跳过。结果放在 VERSION
+fetch_toolkit() {
+  local vers=$SOP/versions tmp
+  mkdir -p "$vers" || die "建不了 $vers"
+  tmp=$vers/.bootstrap.$$
+  rm -rf "$tmp"
+  local -a g=(git -c core.hooksPath=/dev/null -c init.defaultBranch=main -c advice.detachedHead=false)
+  # 只取最新的一个提交；不支持的（简单的网页服务）就整个取
+  "${g[@]}" init -q "$tmp" || die "建不了 $tmp"
+  "${g[@]}" -C "$tmp" fetch -q --depth 1 "$REPO" refs/heads/main 2>/dev/null \
+    || "${g[@]}" -C "$tmp" fetch -q "$REPO" refs/heads/main \
+    || { rm -rf "$tmp"; die "取不到工具包（$REPO）。看看网络和代理"; }
+  VERSION=$("${g[@]}" -C "$tmp" rev-parse FETCH_HEAD) || { rm -rf "$tmp"; die "取到的工具包看不懂"; }
+  if [ -d "$vers/$VERSION" ]; then
+    rm -rf "$tmp"; say "工具包 ${VERSION:0:8} 已经有了，跳过"; return 0
+  fi
+  "${g[@]}" -C "$tmp" checkout -q FETCH_HEAD || { rm -rf "$tmp"; die "工具包取出来时出错"; }
+  [ -f "$tmp/kernel/launcher.py" ] && [ -f "$tmp/machine/bootstrap.py" ] || { rm -rf "$tmp"; die "取到的不像 SOP 工具包（$REPO）"; }
+  mv "$tmp" "$vers/$VERSION" || die "放不进 $vers/$VERSION"
+  say "工具包 ${VERSION:0:8} 取好了，在 $vers/$VERSION"
+}
+
+install_uv() {
+  local uv=$TOOLS/uv/bin/uv v
+  if v=$("$uv" --version 2>/dev/null); then say "uv 已经有了（$v），跳过"; return 0; fi
+  SOP_TOOLS=$TOOLS bash "$SOP/versions/$VERSION/machine/install/uv.sh" </dev/null >"$LOG" 2>&1 \
+    || { tail -5 "$LOG" >&2; die "uv 没装上（完整输出在 $LOG）"; }
+  say "uv 装好了（$("$uv" --version)），在 $TOOLS/uv"
+}
+
+# 工具包里的小帮手（machine/bootstrap.py），用刚装的 uv 和系统自带的 Python 跑；uv 的缓存放 ~/tools/cache/uv
+helper() {
+  env UV_CACHE_DIR="$TOOLS/cache/uv" UV_PYTHON_INSTALL_DIR="$TOOLS/uv/python" \
+    "$TOOLS/uv/bin/uv" run -q --no-project --python 3.14 python -I "$SOP/versions/$VERSION/machine/bootstrap.py" "$@" </dev/null
+}
+
+main() {
+  OPT_YES=; REPO=${SOP_TOOLKIT_REPO:-$DEFAULT_REPO}
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --yes) OPT_YES=1; shift ;;
+      --repo) REPO=${2:?--repo 后面要给地址}; shift 2 ;;
+      --proxy) OPT_PROXY=${2-}; shift 2 ;;
+      *) die "不认识的选项：$1" ;;
+    esac
+  done
+  [ -n "$REPO" ] || die "还没有写工具包仓库的地址（工具包的公开仓库建好之前，用 --repo 给）"
+  TOOLS=$HOME/tools SOP=$HOME/tools/sop
+  LOG=$(mktemp "${TMPDIR:-/tmp}/sop-bootstrap.XXXXXX.log")
+  cd "$HOME" || die "进不了主目录"
+
+  say "SOP 工具包第零步：准备网络、装 git 和 curl、取工具包、装 uv。中途断了可以重新执行，做过的会跳过。"
+  step "1/7 看系统"
+  check_system
+  say "Ubuntu 26.04，账号 $(id -un)，主目录 $HOME"
+
+  step "2/7 网络"
+  TARGETS=("GitHub|$GITHUB_URL" "Ubuntu 软件源|$(apt_source)")
+  local rp; rp=$(repo_probe_url "$REPO")
+  [ -n "$rp" ] && [ "$rp" != "$GITHUB_URL" ] && TARGETS+=("工具包仓库|$rp")
+  network_step
+  use_network
+
+  step "3/7 git、curl"
+  install_apt
+
+  step "4/7 取工具包"
+  fetch_toolkit
+
+  step "5/7 装 uv"
+  install_uv
+
+  step "6/7 主目录在哪个分区（只报告，不用做什么）"
+  helper layout || say "（查分区出错了，不影响接着装；之后 sop machine doctor 会再查一次）"
+
+  step "7/7 记下网络设置、装好 sop 命令"
+  local -a a=(finish "$VERSION" --source "$SOURCE_KIND")
+  [ -n "$PROXY" ] && a+=(--proxy "$PROXY")
+  [ -n "$NOPROXY" ] && a+=(--no-proxy "$NOPROXY")
+  helper "${a[@]}" || die "写网络设置、启动器时出错"
+  "$SOP/sop" machine tools </dev/null >"$LOG" 2>&1 || { tail -5 "$LOG" >&2; die "sop 运行不起来（完整输出在 $LOG）"; }
+  rm -f "$LOG"
+  say "sop 能运行了"
+
+  say ""
+  say "第零步做完了。下一步："
+  say "  关掉这个终端窗口，重新打开一个，执行：  sop machine setup"
+  say "  （想在这个窗口里接着做，就执行：  ~/tools/sop/sop machine setup）"
+}
+
+if [ -z "${BASH_SOURCE[0]:-}" ] || [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi

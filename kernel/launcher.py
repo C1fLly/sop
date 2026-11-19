@@ -68,7 +68,9 @@ def main():
             die('还没有安装任何工具包版本')
         d = VERS / latest
     py = os.environ.get('SOP_PYTHON')
-    cmd = [py] if py else ['uv', 'run', '--no-project', '--python', '3.14', 'python']
+    tools = pathlib.Path(os.environ.get('SOP_TOOLS_DIR') or HOME.parent).expanduser()
+    uv = tools / 'uv' / 'bin' / 'uv'      # 规定位置那份 uv（4.3）；没有才用 PATH 里的
+    cmd = [py] if py else [str(uv) if os.access(uv, os.X_OK) else 'uv', 'run', '-q', '--no-project', '--python', '3.14', 'python']
     os.execvp(cmd[0], [*cmd, '-I', str(d / 'kernel' / 'main.py'), *sys.argv[1:]])
 
 

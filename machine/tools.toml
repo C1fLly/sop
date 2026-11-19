@@ -17,7 +17,8 @@
 #   elsewhere 别的装法常放的位置（可不写，只给工具包自己装的那几样）：体检看这些地方有没有另一份（4.3「合格」）
 #
 # 版本下限先按第一段、第二段实际用过的版本写（W27、W36，本机）；3-08、3-09、3-22 真装时再核对。
-# 安装脚本在 machine/install/ 下：uv、nvm、Node、pnpm、gh 是 3-08 写的；免管理员 Docker 3-09 写，wt 3-22 写。
+# 安装脚本在 machine/install/ 下：uv、nvm、Node、pnpm、gh 是 3-08 写的；免管理员 Docker 是 3-09 写的（它要的 iptables、
+# 网络模块、系统规则在它自己的脚本里装，不另列），wt 3-22 写。「apt:」那几样由 machine/install.py 合成一次 apt 装。
 
 [[tool]]
 name = "git"

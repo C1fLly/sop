@@ -1,15 +1,19 @@
 """3-08：M2 安装 uv、nvm、Node、pnpm、gh，缓存目录，终端启动文件里那一段（设计书 4.3、4.5；W36）。
+3-09：免管理员 Docker 的安装脚本怎么判断（--plan，只看不改）、用系统软件包装的几样（要管理员密码）。
 
 真的下载、安装只在虚拟机里做（tests/vm/m2.sh）；这里在 /tmp 的临时目录里测：
 那一段怎么加、怎么换、段落外的字一个不动；安装脚本和检查命令的环境只认规定位置；
 清单里 nvm、Node、pnpm 的检查命令在环境里留着旧 nvm 时也不认错；安装的先查、再装、再查。
 """
+import contextlib
+import io
 import os
 import pathlib
+import socket
 import stat
 import subprocess
 
-from machine import catalog, install, shellenv
+from machine import catalog, components, install, shellenv
 from tests.helpers import REPO, TempHome, mock_env
 
 OLD_RC = '# ~/.bashrc: 用户自己的\ncase $- in *i*) ;; *) return;; esac\nexport NVM_DIR="$HOME/.nvm"\nalias ll=\'ls -alF\'\n'
@@ -28,6 +32,7 @@ class TestBlock(TempHome):
                      'pnpm_config_cache_dir=', 'pnpm_config_state_dir=', 'UV_CACHE_DIR="$HOME/tools/cache/uv"',
                      'UV_PYTHON_INSTALL_DIR="$HOME/tools/uv/python"', 'UV_PYTHON_BIN_DIR="$HOME/tools/uv/bin"',
                      'npm_config_cache="$HOME/tools/cache/npm"', '. "$NVM_DIR/nvm.sh"', '$HOME/tools/gh/bin', '$HOME/tools/pnpm/bin',
+                     '$HOME/tools/docker/bin',
                      'export GH_TELEMETRY="0"'):
             self.assertIn(must, b)
         self.assertNotIn('export npm_config_store', b)   # pnpm 12 不认 npm_config_ 开头的（W36）
@@ -249,7 +254,7 @@ class TestInstall(TempHome):
 
     def test_real_scripts(self):
         """真的安装脚本：清单里写的都在、bash 语法对；只往 $SOP_TOOLS 下装，不写终端启动文件；没给工具目录就不动。"""
-        for name in install.MINE:
+        for name in install.MINE + ('docker',):
             kind, script = catalog.find(name).install_kind()
             self.assertEqual(kind, 'script')
             self.assertTrue(script.is_file(), script)
@@ -261,6 +266,9 @@ class TestInstall(TempHome):
         self.assertIn('PROFILE=/dev/null', (REPO / 'machine' / 'install' / 'nvm.sh').read_text())
         self.assertIn('UV_UNMANAGED_INSTALL', (REPO / 'machine' / 'install' / 'uv.sh').read_text())
         self.assertIn('sha256sum -c', (REPO / 'machine' / 'install' / 'gh.sh').read_text())
+        for name in ('uidmap', 'dbus-user-session'):
+            self.assertEqual(catalog.find(name).install_kind(), ('apt', name))
+        self.assertEqual(set(install.DOCKER) - {t.name for t in catalog.load()}, set())
         self.assertIn('mktemp -d', lib)
         p = subprocess.run(['bash', str(REPO / 'machine' / 'install' / 'gh.sh')], capture_output=True, text=True,
                            env={'PATH': os.environ['PATH'], 'HOME': str(self.tmp)})
@@ -270,3 +278,162 @@ class TestInstall(TempHome):
                            env={'PATH': os.environ['PATH'], 'HOME': str(self.tmp), 'SOP_TOOLS': str(self.tools)})
         self.assertNotEqual(p.returncode, 0)
         self.assertIn('还没有 nvm', p.stderr)
+
+
+DOCKER_SH = REPO / 'machine' / 'install' / 'docker-rootless.sh'
+
+
+class TestDockerPlan(TempHome):
+    """免管理员 Docker 的安装脚本 --plan：只看不改，打印怎么装。系统那几个位置都换成临时目录里的（4.8 的三处）。"""
+
+    def setUp(self):
+        super().setUp()
+        self.h = self.tmp / 'home'
+        self.run_dir = self.tmp / 'run-user'
+        self.aa = self.tmp / 'apparmor.d'
+        for d in (self.h, self.run_dir, self.aa):
+            d.mkdir()
+        self.units = self.h / '.config' / 'systemd' / 'user'
+        self.mods = self.tmp / 'modules'
+        self.mods.write_text('nf_tables 401408 0 - Live\nip_tables 32768 0 - Live\n')
+        self.builtin = self.tmp / 'modules.builtin'
+        self.builtin.write_text('')
+        self.aa_on = self.tmp / 'aa-enabled'
+        self.aa_on.write_text('Y\n')
+        self.tools = self.h / 'tools'
+        self.sock = self.tmp / 'docker.sock'          # 「系统自带的 Docker」的通道，用到才建
+        self._socks = []
+
+    def tearDown(self):
+        for s in self._socks:
+            s.close()
+        super().tearDown()
+
+    def make_sock(self, path, mode=0o660):
+        s = socket.socket(socket.AF_UNIX)
+        s.bind(str(path))
+        os.chmod(path, mode)
+        self._socks.append(s)
+
+    def plan(self, ok=True):
+        env = {'PATH': os.environ['PATH'], 'HOME': str(self.h), 'SOP_TOOLS': str(self.tools),
+               'XDG_RUNTIME_DIR': str(self.run_dir), 'SOP_SYS_DOCKER_SOCK': str(self.sock),
+               'SOP_APPARMOR_DIR': str(self.aa), 'SOP_APPARMOR_ENABLED': str(self.aa_on),
+               'SOP_PROC_MODULES': str(self.mods), 'SOP_MODULES_BUILTIN': str(self.builtin)}
+        p = subprocess.run(['bash', str(DOCKER_SH), '--plan'], capture_output=True, text=True, env=env)
+        if not ok:
+            self.assertNotEqual(p.returncode, 0)
+            return p.stderr
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return dict(line.split('=', 1) for line in p.stdout.splitlines())
+
+    def context(self, name):
+        (self.h / '.docker').mkdir(exist_ok=True)
+        (self.h / '.docker' / 'config.json').write_text('{"auths": {}, "currentContext": "%s"}' % name)
+
+    def unit(self, execstart):
+        self.units.mkdir(parents=True, exist_ok=True)
+        (self.units / 'docker.service').write_text(f'[Service]\nExecStart={execstart} --config-file x\n')
+
+    def test_fresh_machine(self):
+        p = self.plan()
+        self.assertEqual((p['unit'], p['host'], p['force'], p['restore']),
+                         ('docker', f'unix://{self.run_dir}/docker.sock', 'no', ''))
+        self.assertTrue(p['module'].endswith('load=no'))
+        # 系统规则的名字和体检（components.py）认的是同一个
+        name = components.docker_rule_name(os.path.realpath(self.tools / 'docker' / 'bin' / 'rootlesskit'))
+        self.assertEqual(p['rule'], f'{name} write=yes')
+        self.assertEqual(list(self.aa.iterdir()), [])                       # 只看不改
+        self.assertFalse((self.h / '.docker').exists())
+        self.assertFalse(self.units.exists())
+
+    def test_system_docker(self):
+        """系统自带的在运行：小白能写它的通道才加 --force；装完默认指向切回原来那份。"""
+        self.make_sock(self.sock)
+        p = self.plan()
+        self.assertEqual((p['unit'], p['force'], p['restore']), ('docker', '--force', 'default'))
+        os.chmod(self.sock, 0o440)                                          # 小白不在 docker 组：官方脚本不中止，不加
+        p = self.plan()
+        self.assertEqual((p['force'], p['restore']), ('no', 'default'))
+        self.context('desktop-linux')                                       # 原来指着别的：切回那个
+        self.assertEqual(self.plan()['restore'], 'desktop-linux')
+        self.context('rootless')                                            # 已经是 rootless（重装）：不动
+        self.assertEqual(self.plan()['restore'], '')
+
+    def test_context_without_system_docker(self):
+        self.context('default')                                             # 电脑上只有这一份：留着官方脚本切到的 rootless
+        self.assertEqual(self.plan()['restore'], '')
+        self.context('remote-box')                                          # 原来指着别的：切回
+        self.assertEqual(self.plan()['restore'], 'remote-box')
+        (self.h / '.docker' / 'config.json').write_text('{坏的')
+        self.assertIn('读不懂', self.plan(ok=False))
+
+    def test_service_name_taken(self):
+        """docker 这个服务名被另一份免管理员的 Docker 占了：用 sop-docker，另用一条通道，不用官方脚本（不切默认指向）。"""
+        self.unit(f'{self.h}/bin/dockerd-rootless.sh')
+        p = self.plan()
+        self.assertEqual((p['unit'], p['host'], p['restore']), ('sop-docker', f'unix://{self.run_dir}/sop-docker/docker.sock', ''))
+        self.make_sock(self.sock)                                           # 再加上系统自带的：也不切（官方脚本没跑）
+        self.assertEqual(self.plan()['restore'], '')
+        self.unit(f'{self.tools}/docker/bin/dockerd-rootless.sh')           # 是规定位置那份自己的（重装）：照用 docker
+        self.assertEqual(self.plan()['unit'], 'docker')
+
+    def test_manual_rootless_running(self):
+        """另一份没用后台服务、自己在默认通道上跑着：也不占它的名字和通道。"""
+        self.make_sock(self.run_dir / 'docker.sock')
+        self.assertEqual(self.plan()['unit'], 'sop-docker')
+
+    def test_admin_parts(self):
+        self.mods.write_text('')                                            # 网络模块没载入：要载入
+        self.assertTrue(self.plan()['module'].endswith('load=yes'))
+        self.builtin.write_text('kernel/net/netfilter/nf_tables.ko\nkernel/net/ipv4/netfilter/ip_tables.ko\n')
+        self.assertTrue(self.plan()['module'].endswith('load=no'))          # 编进内核的不用载入
+        self.aa_on.write_text('N\n')                                       # 系统没开安全模块：不写规则
+        self.assertTrue(self.plan()['rule'].endswith('write=no'))
+
+    def test_refuse_odd_paths(self):
+        self.tools = self.tmp / 'my tools'
+        self.assertIn('空格或引号', self.plan(ok=False))
+
+
+class TestInstallApt(TempHome):
+    """用系统软件包装的几样：先说一句要做什么，再由系统问密码；几样合成一次 apt；代理按网络设置给进去。"""
+
+    def fake_run(self, rc=0):
+        calls = []
+
+        def run(cmd, **kw):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, rc)
+        return calls, run
+
+    def test_one_apt_with_explanation(self):
+        calls, run = self.fake_run()
+        tools = [catalog.find('uidmap'), catalog.find('dbus-user-session')]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            ok, msg = install.install_apt(tools, net={'http_proxy': 'http://p:1', 'https_proxy': 'http://p:1'}, run=run)
+        self.assertTrue(ok)
+        self.assertIn('装好了', msg)
+        said = out.getvalue()
+        self.assertIn('uidmap、dbus-user-session', said)
+        self.assertIn('管理员权限', said)
+        self.assertIn('登录密码', said)
+        self.assertEqual(len(calls), 1)                                     # 合成一次
+        cmd = calls[0]
+        self.assertEqual(cmd[:3], ['sudo', '-p', install.SUDO_PROMPT])
+        self.assertIn('http_proxy=http://p:1', cmd)
+        self.assertNotIn('HTTP_PROXY=http://p:1', cmd)
+        self.assertIn('DEBIAN_FRONTEND=noninteractive', cmd)
+        self.assertEqual(cmd[-3:], ['sop-apt', 'uidmap', 'dbus-user-session'])
+        self.assertIn('Lock::Timeout', ' '.join(cmd))
+
+    def test_nothing_to_do_and_failure(self):
+        calls, run = self.fake_run()
+        self.assertEqual(install.install_apt([], run=run), (True, ''))
+        self.assertEqual(calls, [])
+        calls, run = self.fake_run(rc=1)
+        with contextlib.redirect_stdout(io.StringIO()):
+            ok, msg = install.install_apt([catalog.find('uidmap')], net={}, run=run)
+        self.assertFalse(ok)
+        self.assertIn('没装上', msg)

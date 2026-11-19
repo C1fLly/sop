@@ -13,8 +13,8 @@ STEP_NAMES = {'M0': '第零步', 'M2': '安装工具', 'M5': '安装 wt'}
 
 HELP = '''sop machine 的用法：
   sop machine tools     列出工具包要装的基础工具：装在哪、哪一步装、要不要管理员密码
-  sop machine doctor    体检：分区、剩余空间、工具在不在规定位置、AI 工具、系统组件，出一份大白话的报告
-                        加 --readonly 只看不记（不写任何登记）
+  sop machine doctor    体检：分区、剩余空间、工具在不在规定位置、AI 工具、系统组件、网络连通，出一份大白话的报告
+                        加 --readonly 只看不记（不写任何登记）；加 --no-network 不试连网络
   sop machine setup     安装（还没做好）
   sop machine migrate   环境迁移（还没做好）'''
 
@@ -37,9 +37,10 @@ def main(argv):
     cmd = argv[0]
     if cmd == 'tools' and len(argv) == 1:
         return show_tools()
-    if cmd == 'doctor' and argv[1:] in ([], ['--readonly']):
+    opts = argv[1:]
+    if cmd == 'doctor' and len(set(opts)) == len(opts) and set(opts) <= {'--readonly', '--no-network'}:
         from . import doctor
-        return doctor.main(readonly=argv[1:] == ['--readonly'])
+        return doctor.main(readonly='--readonly' in opts, net='--no-network' not in opts)
     if cmd in LATER:
         print(LATER[cmd])
         return 2

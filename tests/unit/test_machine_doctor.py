@@ -338,7 +338,8 @@ class TestRecord(Machine):
 
 
 class TestCommand(Machine):
-    """在临时 HOME、只有系统目录的 PATH 里真跑 sop machine doctor：基础工具多半没装，AI 工具一个都找不到。"""
+    """在临时 HOME、只有系统目录的 PATH 里真跑 sop machine doctor：基础工具多半没装，AI 工具一个都找不到。
+    都加 --no-network：自测不连外面的网络（试连在 test_machine_network.py 里用 127.0.0.1 的假服务测）。"""
 
     def sop(self, *args):
         cwd = self.tmp / 'not-a-project'
@@ -348,22 +349,24 @@ class TestCommand(Machine):
                               capture_output=True, text=True, env=env, timeout=300)
 
     def test_readonly_writes_nothing(self):
-        p = self.sop('doctor', '--readonly')
+        p = self.sop('doctor', '--readonly', '--no-network')
         self.assertIn(p.returncode, (0, 1), p.stdout + p.stderr)
         self.assertEqual(p.returncode, 1)   # 临时的工具目录是空的：uv、nvm 这些都没装
         for must in ('体检报告', '一、结论', '二、主目录在哪个分区', '三、剩余空间', '四、基础工具', '五、AI 工具',
-                     '六、系统组件', 'uv：还没装（规定位置 ~/tools/uv）', 'Claude Code：没找到', '这次只看不记'):
+                     '六、系统组件', '七、网络连通', '这次没试连网络', 'uv：还没装（规定位置 ~/tools/uv）', 'Claude Code：没找到',
+                     '这次只看不记'):
             self.assertIn(must, p.stdout)
         self.assertFalse(paths.config_dir().exists())
         self.assertEqual(os.listdir(self.u), ['tools'])
 
     def test_records_tools_only(self):
-        p = self.sop('doctor')
+        p = self.sop('doctor', '--no-network')
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         t = json.loads((paths.config_dir() / 'tools.json').read_text())['tools']
         self.assertEqual(t['uv']['state'], 'missing')
         self.assertEqual(t['claude']['kind'], 'ai')
         self.assertFalse((paths.config_dir() / 'system.json').exists())
         self.assertIn('已记进', p.stdout)
-        p = self.sop('doctor', '--nonsense')
-        self.assertEqual(p.returncode, 2)
+        for bad in (['--nonsense'], ['--no-network', '--no-network']):
+            p = self.sop('doctor', *bad)
+            self.assertEqual(p.returncode, 2)

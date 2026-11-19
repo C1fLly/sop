@@ -1,7 +1,8 @@
 """`sop machine doctor`：体检（设计书 4.3、4.5 的 M1，任务 3-06），出一份大白话的报告。
 
 查的几样都是只读的：主目录在哪个分区（disks.py）、剩余空间（space.py）、基础工具在不在规定位置、
-另有一份不在规定位置的在哪占多大（locate.py）、AI 工具在哪什么版本、系统组件的版本（components.py）。
+另有一份不在规定位置的在哪占多大（locate.py）、AI 工具在哪什么版本、系统组件的版本（components.py）、
+GitHub、AI 服务、各软件源连不连得上（network.py，3-50；只连不登录，`--no-network` 不试）。
 
 登记：
 - 工具实际位置记进 config/tools.json（基础工具和 AI 工具都记；真实 AI 演练写的版本留着）。
@@ -9,29 +10,32 @@
   sop 启动时就看不出变化、跳过了隔离自检。这里只说哪几样和上次登记的不一样。
 - `--readonly`：只看不记，一个文件都不写（连 config 目录都不建）。
 
-退出码：0 基础工具全部合格；1 有没装好的（报告照样出）；剩余空间不够、往终端塞按键没禁用这些「要注意」的不算。
+退出码：0 基础工具全部合格；1 有没装好的（报告照样出）；剩余空间不够、往终端塞按键没禁用、有连不上的这些「要注意」的不算。
 另有一份不在规定位置的，不算不合格，也不挡流程（4.3）。
 """
 import time
 
 from kernel import paths
 
-from . import catalog, components, config, disks, locate, space
+from . import catalog, components, config, disks, locate, network, space
 
 STATE_TEXT = {'ok': '合格', 'old': '版本不够', 'missing': '还没装'}
 STEP_NAMES = {'M0': '第零步', 'M2': '安装工具', 'M5': '安装 wt'}
 
 
-def collect(home=None, run=None):
-    """只读地查一遍，返回一个字典给 report()、record() 用。run 给了就替换查磁盘用的命令（测试用）。"""
+def collect(home=None, run=None, net=True):
+    """只读地查一遍，返回一个字典给 report()、record() 用。run 给了就替换查磁盘用的命令（测试用）。
+    net=False 不试连网络（--no-network）。"""
     kw = {'run': run} if run else {}
     parts = components.collect(**kw)
+    ai = locate.find_ai_tools(home=home)
     return {
         'time': time.strftime('%Y-%m-%d %H:%M'),
         'layout': disks.collect(home, **kw),
         'space': space.check(home, **kw),
         'tools': locate.check_tools(home=home, sysdisk=locate.SystemDisk(**kw)),
-        'ai': locate.find_ai_tools(home=home),
+        'ai': ai,
+        'network': network.collect([a.name for a in ai if a.found]) if net else None,
         'components': parts,
         'changes': config.system_changes(parts),
         'registered_ai': {k: v for k, v in config.tools().items() if v.get('kind') == 'ai'},
@@ -92,6 +96,9 @@ def report(d, home=None, readonly=False):
         notes.append('往终端塞按键没有禁用，AI 对话的步骤不会启动')
     if not any(a.found for a in d['ai']):
         notes.append('一个 AI 工具都没找到')
+    down = network.failed(d.get('network'))
+    if down:
+        notes.append(f'有 {len(down)} 样连不上：{"、".join(r.target.label for r in down)}，原因见第七项')
     others = [s for s in d['tools'] if s.others]
 
     out = [f'体检报告（{d["time"]}）', '']
@@ -127,6 +134,12 @@ def report(d, home=None, readonly=False):
     out.append('六、系统组件')
     out += ['  ' + x for x in components.describe(d['components'], d['changes']).splitlines()]
     out.append('')
+    out.append('七、网络连通')
+    if d.get('network') is None:
+        out.append('  这次没试连网络（--no-network）。')
+    else:
+        out += ['  ' + x for x in network.describe(d['network']).splitlines()]
+    out.append('')
     if readonly:
         out.append('这次只看不记（--readonly），没有写任何登记。')
     else:
@@ -141,8 +154,8 @@ def record(d):
     return config.record_tools(entries)
 
 
-def main(readonly=False, home=None):
-    d = collect(home)
+def main(readonly=False, home=None, net=True):
+    d = collect(home, net=net)
     if not readonly:
         record(d)
     text, bad, _ = report(d, home, readonly)

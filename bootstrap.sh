@@ -20,6 +20,8 @@
 #   --repo <地址>    工具包仓库（也可以用环境变量 SOP_TOOLKIT_REPO）。3-41 在 GitHub 上建好仓库后，下面的 DEFAULT_REPO 改成它
 #   --yes            探测到的网络情况直接当成对的，不问
 #   --proxy <地址>   不探测，直接用这个代理（给空的就是不用代理）
+#   --offline <目录> 离线包（3-14）用：不上网，git、curl 的软件包、uv、工具包都从这个目录取。
+#                    小白不直接用它：离线包是一个文件，bash <离线包> 解开后自己带上这个选项（machine/offline/）
 set -uo pipefail
 
 DEFAULT_REPO=''     # 3-41：改成 https://github.com/C1fLly/sop.git
@@ -178,6 +180,12 @@ network_step() {
   done
 }
 
+# 离线包：不试连、不问代理，网络设置记成「不用代理」
+offline_network() {
+  PROXY=; NOPROXY=; SOURCE_KIND=detected
+  say "用的是离线包：不试连网络、不问代理。网络设置先记成「不用代理」，电脑能上网以后可以改。"
+}
+
 # 之后所有下载（apt、git、uv）用定下来的代理
 use_network() {
   unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
@@ -201,6 +209,7 @@ install_apt() {
   if [ ${#need[@]} -eq 0 ]; then say "git、curl 都有了，跳过"; return 0; fi
   say "接下来用系统的软件包装 ${need[*]}（git 管代码和进度，curl 下载工具），要管理员权限。"
   say "系统会问这台电脑的登录密码（就是开机登录用的那个），输入时屏幕上什么都不显示，输完按回车。"
+  [ -n "${OFFLINE:-}" ] && { install_apt_offline "${need[@]}"; return; }
   local -a e=()
   [ -n "$PROXY" ] && e+=(http_proxy="$PROXY" https_proxy="$PROXY")
   [ -n "$NOPROXY" ] && e+=(no_proxy="$NOPROXY")
@@ -209,6 +218,27 @@ install_apt() {
     sop-apt "${need[@]}" </dev/null \
     || die "${need[*]} 没装上（密码不对、这个账号不能用 sudo，或者连不上软件源）"
   say "${need[*]} 装好了"
+}
+
+# 离线包：只用离线包里带的软件包（debs/ 下，打包时带了 Packages 索引）。apt 的索引和缓存放在一个临时目录里，
+# 不动系统的软件源设置和索引；电脑上已经有的、比离线包里新的软件包照用，不降级。临时目录用完由同一个 sudo 删掉
+install_apt_offline() {
+  local debs=$OFFLINE/debs
+  [ -f "$debs/Packages" ] || die "离线包里没有系统软件包（$debs）：离线包不完整，重新拷一次"
+  sudo -p "$SUDO_PROMPT" env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 sh -c '
+    debs=$1; shift
+    w=$(mktemp -d /tmp/sop-offline-apt.XXXXXX) || exit 1
+    chmod 755 "$w"      # 系统的下载程序（_apt 账号）要进得去，不然 apt 报一串英文警告
+    mkdir -p "$w/lists/partial" "$w/cache/archives/partial" "$w/parts"
+    printf "deb [trusted=yes] file:%s ./\n" "$debs" > "$w/sources.list"
+    o="-o DPkg::Lock::Timeout=300 -o Dir::Etc::SourceList=$w/sources.list -o Dir::Etc::SourceParts=$w/parts"
+    o="$o -o Dir::State::Lists=$w/lists -o Dir::Cache=$w/cache"
+    apt-get $o update -qq >/dev/null && apt-get $o install -y -qq --no-install-recommends "$@" >/dev/null
+    rc=$?
+    rm -rf "$w"
+    exit $rc' sop-apt "$debs" "$@" </dev/null \
+    || die "$* 没装上（密码不对、这个账号不能用 sudo，或者离线包里的软件包和这台电脑的系统对不上）"
+  say "$* 装好了（用的是离线包里的软件包）"
 }
 
 # 取工具包：Git 取最新的 main，放到 versions/<提交编号>；已经有这个版本就跳过。结果放在 VERSION
@@ -236,42 +266,59 @@ fetch_toolkit() {
 install_uv() {
   local uv=$TOOLS/uv/bin/uv v
   if v=$("$uv" --version 2>/dev/null); then say "uv 已经有了（$v），跳过"; return 0; fi
-  SOP_TOOLS=$TOOLS bash "$SOP/versions/$VERSION/machine/install/uv.sh" </dev/null >"$LOG" 2>&1 \
+  local -a e=(env SOP_TOOLS="$TOOLS")
+  if [ -n "$OFFLINE" ]; then
+    local arc; arc=$(ls "$OFFLINE"/uv/uv-*.tar.gz 2>/dev/null | head -1)
+    [ -n "$arc" ] || die "离线包里没有 uv：离线包不完整，重新拷一次"
+    e+=(SOP_UV_ARCHIVE="$arc")
+  fi
+  "${e[@]}" bash "$SOP/versions/$VERSION/machine/install/uv.sh" </dev/null >"$LOG" 2>&1 \
     || { tail -5 "$LOG" >&2; die "uv 没装上（完整输出在 $LOG）"; }
   say "uv 装好了（$("$uv" --version)），在 $TOOLS/uv"
 }
 
 # 工具包里的小帮手（machine/bootstrap.py），用刚装的 uv 和系统自带的 Python 跑；uv 的缓存放 ~/tools/cache/uv
 helper() {
-  env UV_CACHE_DIR="$TOOLS/cache/uv" UV_PYTHON_INSTALL_DIR="$TOOLS/uv/python" \
+  env UV_CACHE_DIR="$TOOLS/cache/uv" UV_PYTHON_INSTALL_DIR="$TOOLS/uv/python" ${OFFLINE:+UV_OFFLINE=1} \
     "$TOOLS/uv/bin/uv" run -q --no-project --python 3.14 python -I "$SOP/versions/$VERSION/machine/bootstrap.py" "$@" </dev/null
 }
 
 main() {
-  OPT_YES=; REPO=${SOP_TOOLKIT_REPO:-$DEFAULT_REPO}
+  OPT_YES=; OFFLINE=; REPO=${SOP_TOOLKIT_REPO:-$DEFAULT_REPO}
   while [ $# -gt 0 ]; do
     case $1 in
       --yes) OPT_YES=1; shift ;;
       --repo) REPO=${2:?--repo 后面要给地址}; shift 2 ;;
       --proxy) OPT_PROXY=${2-}; shift 2 ;;
+      --offline) OFFLINE=${2:?--offline 后面要给离线包解开的目录}; shift 2 ;;
       *) die "不认识的选项：$1" ;;
     esac
   done
+  if [ -n "$OFFLINE" ]; then
+    OFFLINE=$(cd "$OFFLINE" 2>/dev/null && pwd) || die "没有离线包的目录：$OFFLINE"
+    [ -f "$OFFLINE/sop.bundle" ] && [ -f "$OFFLINE/VERSION" ] || die "离线包不完整（$OFFLINE）：重新拷一次"
+    REPO=$OFFLINE/sop.bundle
+  fi
   [ -n "$REPO" ] || die "还没有写工具包仓库的地址（工具包的公开仓库建好之前，用 --repo 给）"
   TOOLS=$HOME/tools SOP=$HOME/tools/sop
   LOG=$(mktemp "${TMPDIR:-/tmp}/sop-bootstrap.XXXXXX.log")
   cd "$HOME" || die "进不了主目录"
 
   say "SOP 工具包第零步：准备网络、装 git 和 curl、取工具包、装 uv。中途断了可以重新执行，做过的会跳过。"
+  [ -n "$OFFLINE" ] && say "（用的是离线包，不上网：工具包提交 $(cut -c1-8 "$OFFLINE/VERSION")）"
   step "1/7 看系统"
   check_system
   say "Ubuntu 26.04，账号 $(id -un)，主目录 $HOME"
 
   step "2/7 网络"
-  TARGETS=("GitHub|$GITHUB_URL" "Ubuntu 软件源|$(apt_source)")
-  local rp; rp=$(repo_probe_url "$REPO")
-  [ -n "$rp" ] && [ "$rp" != "$GITHUB_URL" ] && TARGETS+=("工具包仓库|$rp")
-  network_step
+  if [ -n "$OFFLINE" ]; then
+    offline_network
+  else
+    TARGETS=("GitHub|$GITHUB_URL" "Ubuntu 软件源|$(apt_source)")
+    local rp; rp=$(repo_probe_url "$REPO")
+    [ -n "$rp" ] && [ "$rp" != "$GITHUB_URL" ] && TARGETS+=("工具包仓库|$rp")
+    network_step
+  fi
   use_network
 
   step "3/7 git、curl"
@@ -279,6 +326,7 @@ main() {
 
   step "4/7 取工具包"
   fetch_toolkit
+  if [ -n "$OFFLINE" ] && [ "$VERSION" != "$(cat "$OFFLINE/VERSION")" ]; then die "离线包里的工具包和它写的提交编号对不上：离线包坏了，重新拷一次"; fi
 
   step "5/7 装 uv"
   install_uv

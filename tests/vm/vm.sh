@@ -8,10 +8,15 @@
 # 另可加一块空白盘（--extra 大小），给造分区的验证用（例如加密加逻辑卷、btrfs 子卷）。
 #
 # 用法：
-#   vm.sh new <名字> [--layout one|home] [--extra 10G] [--mem 4096]   建一台（底盘没有就先做底盘，第一次约两三分钟）
-#   vm.sh start <名字> | stop <名字> | reset <名字> | rm <名字>        起、关、还原成全新（要先关）、删掉
+#   vm.sh new <名字> [--layout one|home] [--extra 10G] [--mem 4096] [--offline]
+#                                                                       建一台（底盘没有就先做底盘，第一次约两三分钟）
+#                                                                       --offline：断网（3-14）。QEMU 的 restrict=on：虚拟机连不到
+#                                                                       本机、也连不到外面，只留本机进虚拟机登录的那一个口
+#   vm.sh start <名字> [--usb <镜像文件>]                                起；--usb 把一个磁盘镜像当成 U 盘插上（3-14）
+#   vm.sh stop <名字> | reset <名字> | rm <名字>                         关、还原成全新（要先关）、删掉
 #   vm.sh ssh <名字> [命令...]                                           登进去（账号 xiaobai，虚拟机里免密码 sudo）
 #   vm.sh push <名字> <本机路径> <虚拟机里的路径>                        拷文件或目录进去
+#   vm.sh pull <名字> <虚拟机里的路径> <本机路径>                        拷文件出来
 #   vm.sh list                                                           列出所有按名字建的虚拟机
 #   vm.sh base <one|home>                                                重做底盘（要先删掉用它的虚拟机）
 #
@@ -49,7 +54,7 @@ qemu_run() {     # 名字 端口 内存 pid文件 控制台日志 磁盘... [-- 
   drives+=("$@")
   qemu-system-x86_64 -name "$name" -machine q35,accel=kvm -cpu host -smp 4 -m "$mem" \
     "${drives[@]}" \
-    -netdev user,id=n0,hostfwd=tcp:127.0.0.1:$port-:22 -device virtio-net-pci,netdev=n0 \
+    -netdev user,id=n0${NET_RESTRICT:+,restrict=on},hostfwd=tcp:127.0.0.1:$port-:22 -device virtio-net-pci,netdev=n0 \
     -display none -serial file:"$log" -daemonize -pidfile "$pid"
 }
 stop_by() {      # 端口 known_hosts pid文件
@@ -137,21 +142,29 @@ case $cmd in
   new)
     n=${1:-}; need_name "$n"; shift
     [ -e "$VMS/$n" ] && die "已经有叫 $n 的虚拟机了（要回到全新用 reset）"
-    L=one extra= mem=4096
+    L=one extra= mem=4096 net=
     while [ $# -gt 0 ]; do case $1 in
-      --layout) L=$2; shift 2;; --extra) extra=$2; shift 2;; --mem) mem=$2; shift 2;;
+      --layout) L=$2; shift 2;; --extra) extra=$2; shift 2;; --mem) mem=$2; shift 2;; --offline) net=offline; shift;;
       *) die "不认识的选项：$1";; esac; done
     case $L in one|home) ;; *) die "--layout 只有 one、home";; esac
     [ -f "$BASES/$L/done" ] || make_base "$L"
     mkdir -p "$VMS/$n"
-    printf 'layout=%s\nport=%s\nextra=%s\nmem=%s\n' "$L" "$(free_port)" "$extra" "$mem" > "$VMS/$n/conf"
+    printf 'layout=%s\nport=%s\nextra=%s\nmem=%s\nnet=%s\n' "$L" "$(free_port)" "$extra" "$mem" "$net" > "$VMS/$n/conf"
     mkdisks "$n"
-    echo "虚拟机 $n 建好了（底盘 $L$([ -n "$extra" ] && echo "，另加一块 $extra 的空白盘")，登录端口 $(conf $n port)）" ;;
+    echo "虚拟机 $n 建好了（底盘 $L$([ -n "$extra" ] && echo "，另加一块 $extra 的空白盘")$([ -n "$net" ] && echo "，断网")，登录端口 $(conf $n port)）" ;;
   start)
-    n=${1:-}; need_name "$n"; exists "$n"; D=$VMS/$n
-    running "$D/pid" && { echo "$n 已经开着"; exit 0; }
+    n=${1:-}; need_name "$n"; exists "$n"; D=$VMS/$n; shift
+    usb=
+    while [ $# -gt 0 ]; do case $1 in --usb) usb=$2; shift 2;; *) die "不认识的选项：$1";; esac; done
+    running "$D/pid" && { [ -n "$usb" ] && die "$n 已经开着，要插 U 盘得先关"; echo "$n 已经开着"; exit 0; }
     disks=("$D/root.qcow2"); [ -f "$D/home.qcow2" ] && disks+=("$D/home.qcow2"); [ -f "$D/extra.qcow2" ] && disks+=("$D/extra.qcow2")
-    qemu_run "sop-vm-$n" "$(conf $n port)" "$(conf $n mem)" "$D/pid" "$D/console.log" "${disks[@]}"
+    more=()
+    if [ -n "$usb" ]; then
+      [ -f "$usb" ] || die "没有 U 盘的镜像文件：$usb"
+      more=(-- -device qemu-xhci,id=xhci -drive "if=none,id=usbstick,format=raw,file=$usb" -device usb-storage,bus=xhci.0,drive=usbstick,removable=on)
+    fi
+    [ "$(conf $n net)" = offline ] && export NET_RESTRICT=1
+    qemu_run "sop-vm-$n" "$(conf $n port)" "$(conf $n mem)" "$D/pid" "$D/console.log" "${disks[@]}" "${more[@]}"
     echo "$n 已启动，等它能登录…"
     wait_login "$(conf $n port)" "$D/known_hosts" 180 || die "180 秒还登录不了，看 $D/console.log"
     # 主机名改成虚拟机的名字（底盘里是 sop-base-…）
@@ -172,6 +185,9 @@ case $cmd in
   push)
     n=${1:-}; need_name "$n"; exists "$n"; [ $# -eq 3 ] || die "用法：vm.sh push <名字> <本机路径> <虚拟机里的路径>"
     scp -q -r $(ssh_opts "$VMS/$n/known_hosts") -P "$(conf $n port)" "$2" "xiaobai@127.0.0.1:$3" ;;
+  pull)
+    n=${1:-}; need_name "$n"; exists "$n"; [ $# -eq 3 ] || die "用法：vm.sh pull <名字> <虚拟机里的路径> <本机路径>"
+    scp -q $(ssh_opts "$VMS/$n/known_hosts") -P "$(conf $n port)" "xiaobai@127.0.0.1:$2" "$3" ;;
   list)
     [ -d "$VMS" ] || { echo "（还没有）"; exit 0; }
     for c in "$VMS"/*/conf; do

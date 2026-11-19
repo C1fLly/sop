@@ -7,10 +7,12 @@
    每次改完，从宿主这边看是不是真的改成了；改成了的，特权侧「用之前核对」必须发现并拒绝执行。每次之后把现场复原。
 2. 经专用 Docker 看不到 ~/tools/sop/state/（AI 状态目录、锁、指纹）和复用 SSH 连接的通道目录（6.2 第一条）。
 
+专用 Docker 用正式的后台服务和分组起（runner/docker/service.py，3-17）：sop-docker-sopdk.service 放在分组 sop-sopdk.slice 里，
+和真项目的一模一样，所以测的就是真项目会用的那一套。
 跑完收拾干净（3-11 起，因为装机时要在小白的电脑上跑）：假项目在 /tmp 下现建、用完删；~/tools/sop/state/ 下这次用的
-那个项目目录、通道目录里放的假通道文件都删掉；临时服务停掉。留下的只有这个专用 Docker 的数据
-~/tools/docker-sop/sopdk（拉下来的那个小镜像，下次自检不用再拉）。
-拉镜像走网络设置（config/network.json）里的代理；环境变量 SOPD_PROXY 已经给了就用它。
+那个项目目录、通道目录里放的假通道文件都删掉；服务停掉、两份登记文件删掉（里面写着 /tmp 下这次的假项目）。留下的只有这个
+专用 Docker 的数据 ~/tools/docker-sop/sopdk（拉下来的那个小镜像，下次自检不用再拉）。
+拉镜像走网络设置（config/network.json）里的代理；环境变量 SOPD_PROXY 已经给了就用它（service.proxy）。
 用法：python3 runner/docker/selftest_docker.py [镜像]（镜像要带 util-linux 的 mount，默认 debian:stable-slim）"""
 import hashlib
 import os
@@ -25,9 +27,10 @@ sys.path.insert(0, str(REPO))
 from kernel import paths, precheck  # noqa: E402
 from kernel.errors import Tampered  # noqa: E402
 from runner import aistate  # noqa: E402
+from runner.docker import service  # noqa: E402
 from runner.selftest import make_fixture  # noqa: E402
 
-PROJECT = 'sopdk'          # 这次自检用的项目名：state/sopdk、docker-sop/sopdk、服务 sop-docker-test-sopdk
+PROJECT = 'sopdk'          # 这次自检用的项目名：state/sopdk、docker-sop/sopdk、服务 sop-docker-sopdk、分组 sop-sopdk.slice
 DOCKER = str(pathlib.Path.home() / 'tools' / 'docker' / 'bin' / 'docker')
 
 
@@ -53,18 +56,6 @@ def restore(R, orig):
         if n not in orig['hooks']:
             p = R / '.git' / 'hooks' / n
             p.chmod(0o644); p.unlink()
-
-
-def proxy():
-    """拉镜像用的代理：SOPD_PROXY 给了就用它，否则用网络设置里的（读不出来就不用）。"""
-    if 'SOPD_PROXY' in os.environ:
-        return os.environ['SOPD_PROXY']
-    try:
-        from machine import config
-        net = config.network()
-    except Exception:          # 登记坏了也不挡自检；拉不下镜像时会明说
-        return ''
-    return net.get('https_proxy') or net.get('http_proxy') or ''
 
 
 def cleanup(tmp, rt_file):
@@ -101,11 +92,11 @@ def run(image, tmp, rt_file):
     rt_file.write_text('')
     orig = {'post-create': (R / '.shared/hooks/post-create').read_bytes(), 'config': (R / '.git/config').read_bytes(),
             'hooks': sorted(os.listdir(R / '.git' / 'hooks'))}
-    sock = subprocess.run([str(REPO / 'runner/docker/start_test.sh'), PROJECT, str(R)], capture_output=True, text=True,
-                          env={**os.environ, 'SOPD_PROXY': proxy()})
-    if sock.returncode:
-        print('专用 Docker 起不来，停下：', sock.stderr[-800:]); return 2      # 没有汇总行：syscheck 当成「中途出错」
-    sock = sock.stdout.strip()
+    try:
+        sock = str(service.start(PROJECT, R, proxy=service.proxy()))
+    except (service.ServiceError, OSError) as e:
+        service.remove(PROJECT)
+        print('专用 Docker 起不来，停下：', str(e)[-800:]); return 2      # 没有汇总行：syscheck 当成「中途出错」
     try:
         if docker(sock, 'image', 'inspect', image).returncode:
             docker(sock, 'pull', '-q', image, check=True)
@@ -154,7 +145,7 @@ def run(image, tmp, rt_file):
         print(f'专用 Docker 的隔离自检：{len(rows)} 项，{len(bad)} 项不符合')
         return 1 if bad else 0
     finally:
-        subprocess.run([str(REPO / 'runner/docker/start_test.sh'), PROJECT, str(R), '停'])
+        service.remove(PROJECT)
 
 
 if __name__ == '__main__':

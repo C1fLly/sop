@@ -12,7 +12,7 @@
 隔离自检（M6，3-11）分两份，依次跑、都过了才算通过：
 - 本机那份 runner/selftest.py（6.2 的四条要求、6.3 的表、往终端塞按键、状态目录）；
 - 专用 Docker 那份 runner/docker/selftest_docker.py（借专用 Docker 用三种挂法改 .shared/hooks、.git/config、.git/hooks，
-  特权侧核对要发现；经专用 Docker 看不到 ~/tools/sop、/run/user）。要用规定位置的免管理员 Docker（M2 装的）起一个临时的专用 Docker。
+  特权侧核对要发现；经专用 Docker 看不到 ~/tools/sop、/run/user）。要用规定位置的免管理员 Docker（M2 装的），按正式的服务和分组起一个专用 Docker（项目名 sopdk，3-17），跑完停掉、删掉登记文件。
 M6（装机时，prepare()）和这里用的是同一个自检；通过后都把自检之前查到的系统组件记进登记。
 测试用：环境变量 SOP_SELFTEST_CMD 换成别的命令（只跑这一条；流程沙箱里用 tests/fakes/selftest/selftest 演通过和不通过）。
 

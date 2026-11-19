@@ -37,7 +37,7 @@ must "diff <(ls -d ~/tools/sop/state/* 2>/dev/null) /tmp/state-before.txt >/dev/
 must "diff <(ls -A /run/user/$(id -u)/sop 2>/dev/null) /tmp/rt-before.txt >/dev/null" "通道目录里没留下假通道文件"
 must "diff <(ls -d /tmp/sop-selftest* 2>/dev/null) /tmp/tmp-before.txt >/dev/null" "/tmp 下没留下假项目"
 must "[ ! -e ~/Project/sopdk-fixture ]" "没有在 ~/Project 下建东西"
-must "! systemctl --user -q is-active sop-docker-test-sopdk" "临时的专用 Docker 停了"
+must "! systemctl --user -q is-active sop-docker-sopdk && [ ! -e ~/.config/systemd/user/sop-docker-sopdk.service ]" "自检用的专用 Docker 停了、登记文件删了"
 echo "  留下的：~/tools/docker-sop/sopdk $(du -sh ~/tools/docker-sop/sopdk 2>/dev/null | cut -f1)（拉下来的小镜像，下次自检不用再拉）"
 
 step "装完第一次推进流程：登记好了，不再自检（自检命令换成一跑就失败的，自检了就会报出来）"

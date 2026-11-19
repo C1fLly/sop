@@ -10,7 +10,7 @@
 |---|---|
 | `bootstrap.sh` | 第零步引导脚本（只用 bash）：网络、git 和 curl、取工具包、装 uv、启动器，最后提示 `sop machine setup`；`--offline` 给离线包用 |
 | `kernel/` | 内核：读流程定义、读写事件日志、拼任务包、调用执行者、校验结果（Python，只用标准库） |
-| `runner/` | 受限运行器：在读不到凭据的环境里启动 AI 和一切项目代码 |
+| `runner/` | 受限运行器：在读不到凭据的环境里启动 AI 和一切项目代码；`runner/docker/` 是专用 Docker（换根脚本、按项目的用户级后台服务和资源分组 `service.py`、它那份隔离自检） |
 | `flows/` | 流程定义（TOML） |
 | `checks/` | 检查库，每个检查附「应通过」和「应报错」的样例 |
 | `prompts/` | 任务包模板 |
@@ -18,7 +18,7 @@
 | `adapters/ai/` | AI 工具适配器（目前只有测试用的 `fake`） |
 | `profiles/` | 技术栈、端、部署档案（目前只有测试用的） |
 | `templates/` | 新项目仓库的初始文件、wt 用的模板 |
-| `tests/` | 自测：单元测试、流程沙箱、假的 `gh`；`tests/vm/` 是验证用的虚拟机脚本（按名字现建、一键还原；`m2.sh`、`docker.sh` 在虚拟机里验 M2 安装，`m6m7.sh` 验 M6、M7，`m0.sh` 验第零步，`offline.sh` 验离线包；不在 `run_all.py` 里） |
+| `tests/` | 自测：单元测试、流程沙箱、假的 `gh`；`tests/vm/` 是验证用的虚拟机脚本（按名字现建、一键还原；`m2.sh`、`docker.sh` 在虚拟机里验 M2 安装，`m6m7.sh` 验 M6、M7，`m0.sh` 验第零步，`offline.sh` 验离线包，`dockersvc.sh` 验专用 Docker 的服务和分组；不在 `run_all.py` 里） |
 | `docs/` | 设计书、审查记录、试验记录 |
 
 ## 跑自测

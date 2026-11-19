@@ -4,7 +4,7 @@
 
 用法：uv run python -m runner.selftest [--keep]
 专用 Docker 那几项（三种挂法改 .shared/hooks、.git/config、.git/hooks；看不到 state 和通道文件）在 runner/docker/selftest_docker.py，
-要在虚拟机里跑。"""
+用正式的专用 Docker 服务和分组起（runner/docker/service.py），要装了规定位置的免管理员 Docker。"""
 import json
 import os
 import pathlib

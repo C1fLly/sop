@@ -162,8 +162,10 @@ class CheckResult:
 
 
 def run_check(tool, timeout=30):
-    """跑检查命令，看装没装、版本够不够。不改任何东西。"""
-    env = {**os.environ, 'SOP_TOOLS': str(paths.tools_dir()), 'LC_ALL': 'C'}
+    """跑检查命令，看装没装、版本够不够。不改任何东西。
+    环境里指向别处那一份的变量（旧的 NVM_DIR 等）去掉，换成规定位置的（shellenv.environ），只认规定位置那一份。"""
+    from . import shellenv
+    env = {**shellenv.environ(), 'LC_ALL': 'C'}
     p = subprocess.Popen(['bash', '-c', tool.check], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          stdin=subprocess.DEVNULL, text=True, start_new_session=True)
     try:

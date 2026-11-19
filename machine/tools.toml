@@ -6,7 +6,9 @@
 #   version   版本要求：">=1.2" 这样的最低版本；"" 表示装了就行、不看版本
 #   location  装在哪：「~/tools/…」，或者「系统软件包」（用 apt 装的，在系统盘上，4.3 列的例外）
 #   check     检查命令（bash 执行）。$SOP_TOOLS 是工具目录（平常就是 ~/tools）。
-#             退出码 0 算装了；输出里第一个像「1.2.3」的数当作版本号
+#             退出码 0 算装了；输出里第一个像「1.2.3」的数当作版本号。
+#             只认规定位置那一份：nvm 那几样先把 NVM_DIR 指到规定位置（终端里原来的 NVM_DIR 可能指着旧的 ~/.nvm），
+#             Node、pnpm 用规定位置那份 nvm 的默认版本（不靠 PATH，PATH 里可能先是旧的）
 #   install   谁来装：「apt:<软件包名>」，或者「script:<machine/ 下的安装脚本>」
 #   admin     装的时候要不要管理员密码
 #   step      哪一步装（4.5）：M0 第零步、M2 安装工具、M5 安装 wt
@@ -15,7 +17,7 @@
 #   elsewhere 别的装法常放的位置（可不写，只给工具包自己装的那几样）：体检看这些地方有没有另一份（4.3「合格」）
 #
 # 版本下限先按第一段、第二段实际用过的版本写（W27、W36，本机）；3-08、3-09、3-22 真装时再核对。
-# 安装脚本由 3-08（nvm、uv、Node、pnpm）、3-09（免管理员 Docker）、3-22（wt）写；gh 的在 3-08 一起写。
+# 安装脚本在 machine/install/ 下：uv、nvm、Node、pnpm、gh 是 3-08 写的；免管理员 Docker 3-09 写，wt 3-22 写。
 
 [[tool]]
 name = "git"
@@ -89,7 +91,7 @@ name = "nvm"
 what = "装和切换 Node"
 version = ">=0.40"
 location = "~/tools/nvm"
-check = '. "$SOP_TOOLS/nvm/nvm.sh" && nvm --version'
+check = 'export NVM_DIR="$SOP_TOOLS/nvm"; . "$NVM_DIR/nvm.sh" --no-use && nvm --version'
 install = "script:install/nvm.sh"
 admin = false
 step = "M2"
@@ -101,7 +103,7 @@ name = "node"
 what = "运行前端和靠 Node 运行的工具；版本由项目的 .nvmrc 指定，这里是默认的那一份"
 version = ">=24"
 location = "~/tools/nvm"
-check = '. "$SOP_TOOLS/nvm/nvm.sh" && node --version'
+check = 'export NVM_DIR="$SOP_TOOLS/nvm"; . "$NVM_DIR/nvm.sh" --no-use && nvm use --silent default >/dev/null && "$NVM_BIN/node" --version'
 install = "script:install/node.sh"
 admin = false
 step = "M2"
@@ -114,7 +116,7 @@ name = "pnpm"
 what = "装 Node 的依赖包；缓存放 ~/tools/cache（用 pnpm_config_ 开头的变量指定，W36）"
 version = ">=12"
 location = "~/tools/nvm"
-check = '. "$SOP_TOOLS/nvm/nvm.sh" && pnpm --version'
+check = 'export NVM_DIR="$SOP_TOOLS/nvm"; . "$NVM_DIR/nvm.sh" --no-use && nvm use --silent default >/dev/null && "$NVM_BIN/pnpm" --version'
 install = "script:install/pnpm.sh"
 admin = false
 step = "M2"
@@ -127,7 +129,7 @@ name = "gh"
 what = "GitHub 的命令行：建仓库、开 PR、看检查结果"
 version = ">=2.60"
 location = "~/tools/gh"
-check = '"$SOP_TOOLS/gh/bin/gh" --version'
+check = 'GH_TELEMETRY=0 GH_NO_UPDATE_NOTIFIER=1 "$SOP_TOOLS/gh/bin/gh" --version'
 install = "script:install/gh.sh"
 admin = false
 step = "M2"

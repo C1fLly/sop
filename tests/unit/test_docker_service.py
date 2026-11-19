@@ -1,9 +1,12 @@
 """3-17：专用 Docker 的正式后台服务和分组（runner/docker/service.py，设计书 6.3 二）。
 只生成文件、不碰服务管理器：登记文件写进 /tmp 的临时目录（SOP_SYSTEMD_USER_DIR），systemctl 换成记下调用的假的。
 真的起服务、超内存被杀、隔离自检 13 项在虚拟机里验（tests/vm/dockersvc.sh）。"""
+import ast
+import json
 import os
 import pathlib
 import stat
+import subprocess
 
 from runner.docker import service as S
 from tests.helpers import REPO, TempHome, mock_env
@@ -120,6 +123,61 @@ class TestRender(Base):
                 S.render('my-app', self.tmp / bad)
         with self.assertRaises(S.ServiceError):
             S.render('a' * 63, self.root)
+
+
+class TestOomScore(Base):
+    """3-54：分组超了内存上限时，内核先杀容器、不杀专用 Docker 自己。真的超内存在虚拟机里演（tests/vm/dockersvc.sh）。"""
+
+    def test_service_processes_lowest(self):
+        """服务里的进程（rootlesskit、dockerd、containerd）分数设成 100：普通用户能设的最低（系统给用户服务的默认是 200）。"""
+        self.assertIn('\nOOMScoreAdjust=100\n', self.files()['sop-docker-my-app.service'])
+
+    def runc_sh(self):
+        tree = ast.parse((REPO / 'runner' / 'docker' / 'dockerd_wrap.py').read_text())
+        for n in tree.body:
+            if isinstance(n, ast.Assign) and getattr(n.targets[0], 'id', '') == 'RUNC_SH':
+                return ast.literal_eval(n.value)
+        self.fail('dockerd_wrap.py 里没有 RUNC_SH')
+
+    def run_wrapper(self, *args):
+        """用一个假的 runc（只记下收到的参数）跑 runc 外壳。"""
+        b = self.tmp / 'bin'
+        b.mkdir(exist_ok=True)
+        (b / 'runc').write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$(dirname "$0")/args"\n')
+        (b / 'runc').chmod(0o755)
+        w = self.tmp / 'runc-wrap'
+        w.write_text(self.runc_sh().replace('@BIN@', str(b)))
+        w.chmod(0o755)
+        subprocess.run([str(w), *args], check=True)
+        return (b / 'args').read_text().splitlines()
+
+    def test_wrapper_raises_container_score(self):
+        """建容器：--bundle 下 config.json 里的分数（dockerd 给的，等于它自己的）改成 1000；别的不动；参数原样交给真的 runc。"""
+        bundle = self.tmp / 'bundle'
+        bundle.mkdir()
+        spec = {'ociVersion': '1.2.1', 'process': {'args': ['sh'], 'oomScoreAdj': 100}, 'root': {'path': 'rootfs'}}
+        (bundle / 'config.json').write_text(json.dumps(spec, separators=(',', ':')))
+        args = ['--root', '/x', '--log', '/x/log.json', 'create', '--bundle', str(bundle), '--pid-file', '/x/pid', 'c1']
+        self.assertEqual(self.run_wrapper(*args), args)
+        got = json.loads((bundle / 'config.json').read_text())
+        self.assertEqual(got, {**spec, 'process': {**spec['process'], 'oomScoreAdj': 1000}})
+
+    def test_wrapper_exec_and_other_commands(self):
+        """docker exec 另起的进程（--process 文件）也改成 1000；带空格的写法也认；别的命令（state、kill、delete）什么都不改。"""
+        proc = self.tmp / 'process.json'
+        proc.write_text('{"args": ["ls"], "oomScoreAdj": 200}')
+        self.run_wrapper('exec', '--process', str(proc), '--detach', 'c1')
+        self.assertEqual(json.loads(proc.read_text())['oomScoreAdj'], 1000)
+        other = self.tmp / 'other.json'
+        other.write_text('{"oomScoreAdj":200}')
+        self.assertEqual(self.run_wrapper('kill', str(other), 'KILL'), ['kill', str(other), 'KILL'])
+        self.assertEqual(other.read_text(), '{"oomScoreAdj":200}')
+
+    def test_wrapper_registered_as_default_runtime(self):
+        """换根脚本把它放进新根、只读，并设成专用 Docker 默认的运行时。"""
+        src = (REPO / 'runner' / 'docker' / 'dockerd_wrap.py').read_text()
+        self.assertIn("ro(f'{NR}/sop')", src)
+        self.assertIn("'--add-runtime', 'sop-runc=/sop/runc', '--default-runtime', 'sop-runc'", src)
 
 
 class TestInstall(Base):

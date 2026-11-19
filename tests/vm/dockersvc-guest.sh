@@ -50,34 +50,47 @@ echo "  容器里的 sleep 在宿主上是进程 $pid：$(cat /proc/$pid/cgroup)
 must "grep -qF '/sop.slice/$SL/' /proc/$pid/cgroup" "容器进程在 $SL 下"
 D rm -f sleeper >/dev/null
 
-step "超内存：容器要的比上限（300M）多，被系统杀掉；看专用 Docker 本身在不在（演 6 次）"
+step "超内存：容器要的比上限（300M）多，被系统杀掉；专用 Docker 本身一次都不被杀（演 ${OOM_N:=24} 次，3-54）"
 wait_up() { for k in $(seq 40); do D info >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
 mainpid() { systemctl --user show -p MainPID --value $SV; }
+procs() { for p in $(cat "/sys/fs/cgroup$cg/cgroup.procs"); do echo "$(cat /proc/$p/comm)=$(cat /proc/$p/oom_score_adj)"; done | sort | tr '\n' ' '; }
+echo "  专用 Docker 的进程和「先杀谁」分数：$(procs)"
+must "[ -n \"\$(procs)\" ] && ! procs | tr ' ' '\n' | grep -v '^$' | grep -qv '=100$'" "专用 Docker 自己的进程都是 100（普通用户能设的最低）"
+must "[ \"\$(D info -f '{{.DefaultRuntime}}')\" = sop-runc ]" "默认的运行时是换根脚本放的 runc 外壳"
+s=$(D run --rm debian:stable-slim cat /proc/self/oom_score_adj); must "[ \"$s\" = 1000 ]" "容器的分数是 1000（$s）"
+s=$(D run --rm --oom-score-adj 300 debian:stable-slim cat /proc/self/oom_score_adj); must "[ \"$s\" = 1000 ]" "容器自己要 300 也改成 1000（$s）"
 ev0=$(awk '/^oom_kill /{print $2}' "/sys/fs/cgroup$(dirname $cg)/memory.events")
-kept=0; died=0; back=0
-D run -d --name bystander debian:stable-slim sleep 9999 >/dev/null; bys=0
-for i in 1 2 3 4 5 6; do
-  case $i in 1|3|5) hog='head -c 600m /dev/zero | tail' ;; *) hog='tail /dev/zero' ;; esac
-  m0=$(mainpid); r0=$(systemctl --user show -p NRestarts --value $SV)
-  D run --rm debian:stable-slim sh -c "$hog" >/dev/null 2>&1; rc=$?
-  sleep 2; up=no; wait_up && up=yes
-  m1=$(mainpid); r1=$(systemctl --user show -p NRestarts --value $SV)
-  if [ "$m0" = "$m1" ] && [ "$r0" = "$r1" ]; then kept=$((kept+1)); how="专用 Docker 没事"; else died=$((died+1)); how="专用 Docker 自己也被杀了，服务管理器把它重新拉起来了（重启次数 $r0 → $r1）"; fi
-  [ $up = yes ] && back=$((back+1))
-  [ "$(D inspect -f '{{.State.Running}}' bystander 2>/dev/null)" = true ] || { bys=$((bys+1)); D rm -f bystander >/dev/null 2>&1; D run -d --name bystander debian:stable-slim sleep 9999 >/dev/null; }
-  echo "  第 $i 次（$hog）：容器退出码 $rc；$how；之后答话：$up"
+back=0; killed=0; bys=0; byk=()
+D run -d --name bystander debian:stable-slim sleep 9999 >/dev/null
+s=$(D exec bystander cat /proc/self/oom_score_adj); must "[ \"$s\" = 1000 ]" "docker exec 起的进程也是 1000（$s）"
+m0=$(mainpid); r0=$(systemctl --user show -p NRestarts --value $SV)
+for i in $(seq $OOM_N); do
+  # 三种吃法轮流：单个进程（容器里只有它）、经 sh 起的管道、sh 下三个一起吃
+  case $((i % 3)) in
+    1) how='tail /dev/zero（单个进程）'; set -- tail /dev/zero ;;
+    2) how='sh -c head|tail'; set -- sh -c 'head -c 600m /dev/zero | tail' ;;
+    0) how='sh 下三个 tail'; set -- sh -c 'for k in 1 2 3; do tail /dev/zero & done; wait' ;;
+  esac
+  e0=$(awk '/^oom_kill /{print $2}' "/sys/fs/cgroup$(dirname $cg)/memory.events")
+  D run --rm debian:stable-slim "$@" >/dev/null 2>&1
+  sleep 1; wait_up && back=$((back+1))
+  e1=$(awk '/^oom_kill /{print $2}' "/sys/fs/cgroup$(dirname $cg)/memory.events"); [ "$e1" -gt "$e0" ] && killed=$((killed+1))
+  if [ "$(D inspect -f '{{.State.Running}}' bystander 2>/dev/null)" != true ]; then
+    bys=$((bys+1)); byk+=("$how"); D rm -f bystander >/dev/null 2>&1; D run -d --name bystander debian:stable-slim sleep 9999 >/dev/null
+  fi
 done
+m1=$(mainpid); r1=$(systemctl --user show -p NRestarts --value $SV)
 ev1=$(awk '/^oom_kill /{print $2}' "/sys/fs/cgroup$(dirname $cg)/memory.events")
-echo "  6 次里专用 Docker 没事 $kept 次、自己也被杀 $died 次；分组记下的被杀次数 $ev0 → $ev1"
-must "[ $((ev1 - ev0)) -ge 6 ]" "每次都被系统按分组的上限杀了（被杀次数至少多 6）"
-must "[ $back = 6 ]" "每次之后专用 Docker 都在答话（被杀的那几次由服务管理器自动拉起）"
-must "systemctl --user -q is-active $SV" "专用 Docker 的服务在跑"
+echo "  $OOM_N 次：有容器被杀的 $killed 次（分组记下的被杀次数 $ev0 → $ev1）；专用 Docker 主进程 $m0 → $m1、重启次数 $r0 → $r1"
+echo "  同一项目里另一个一直在跑的容器（只睡觉）停了 $bys 次；那几次的吃法：$(printf '%s；' "${byk[@]}")"
+must "[ $killed = $OOM_N ]" "每次都被系统按分组的上限杀了"
+must "[ \"$m0\" = \"$m1\" ] && [ \"$r0\" = \"$r1\" ]" "专用 Docker 一次都没被杀（主进程没换、没重启过）"
+must "[ $back = $OOM_N ]" "每次之后专用 Docker 都在答话"
+must "[ $bys = 0 ]" "同一项目里另一个在跑的容器一次都没跟着停（没做到的话见 3-55：内核杀了吃内存的那个后紧接着又多杀一个）"
 out=$(D run --rm debian:stable-slim echo 还能起容器 2>&1); must "[ \"$out\" = 还能起容器 ]" "之后还能起容器"
 out=$(D run --rm debian:stable-slim sh -c 'head -c 200m /dev/zero | tail > /dev/null; echo 200M 没事' 2>&1)
 must "[ \"$out\" = '200M 没事' ]" "上限以内（200M）照常"
 D rm -f bystander >/dev/null 2>&1
-echo "  同一项目里另一个一直在跑的容器（bystander）跟着停了 $bys 次"
-echo "  【没做到，拆到 3-54】专用 Docker 自己也被杀的有 $died 次（6 次里），那几次同一项目在跑的别的容器跟着停；见 3-17 的记录"
 
 step "处理器上限：四个进程一起算，限成 1 核"
 burn() { wait_up; local a=$(date +%s%N); D run --rm debian:stable-slim sh -c 'for i in 1 2 3 4; do (i=0; while [ $i -lt 1500000 ]; do i=$((i+1)); done) & done; wait' >/dev/null 2>&1; local z=$(date +%s%N); python3 -c "print(round(($z - $a) / 1e9, 2))"; }

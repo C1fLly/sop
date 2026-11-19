@@ -10,6 +10,8 @@
 - 启动前换根（dockerd_wrap.py，安装时拷到 ~/tools/docker-sop/<项目名>/dockerd-wrap.py）：视野里只有系统程序、
   它自己的数据、这个项目的根；.git、各工作目录里指向 .git 的小文件、.shared（依赖缓存除外）盖成只读；
   看不到 ~/tools/sop（含 state）、/run/user。
+- 超内存时先杀容器、不杀专用 Docker 自己（3-54）：服务里的进程「先杀谁」分数设成 100（普通用户能设的最低，系统给用户服务的默认是 200），
+  容器的设成 1000（换根脚本放的 runc 外壳改的）。不这样的话容器和 dockerd 分数一样，分组超了上限时内核常挑中占内存最多的 dockerd。
 - 服务登记文件只有用户自己能读（0600）：拉镜像的代理写在里面，代理地址里可能带账号密码。
 - 数据都在 ~/tools/docker-sop/<项目名>/（data、exec、run），停了、删了登记文件都还在。
 
@@ -136,6 +138,7 @@ def render(project, root, limits=None, proxy=''):
         'Delegate=yes',
         'KillMode=mixed',
         'Restart=on-failure',
+        'OOMScoreAdjust=100',
         'RestartSec=2',
         'TimeoutStartSec=60',
         '']) + '\n'

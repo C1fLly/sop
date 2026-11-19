@@ -116,42 +116,51 @@ def _find(lines, mark):
     return [i for i, line in enumerate(lines) if line.rstrip('\n') == mark]
 
 
-def apply(text, new_block):
-    """返回加好（或换好）这一段之后的全文。标记对不上就报错、不改。"""
+def apply(text, new_block, begin=BEGIN, end=END, what='终端启动文件'):
+    """返回加好（或换好）这一段之后的全文。标记对不上就报错、不改。
+    begin、end 换成别的标记，全局规则文件（globalrules.py，M7）也用这一套。"""
     lines = text.splitlines(keepends=True)
-    b, e = _find(lines, BEGIN), _find(lines, END)
+    b, e = _find(lines, begin), _find(lines, end)
     if not b and not e:
         sep = '' if not text else ('\n' if text.endswith('\n') else '\n\n')
         return text + sep + new_block
     if len(b) == 1 and len(e) == 1 and b[0] < e[0]:
         return ''.join(lines[:b[0]]) + new_block + ''.join(lines[e[0] + 1:])
-    raise ShellEnvError('终端启动文件里工具包那一段的开头、结尾标记对不上（只剩一头，或者有两段），'
+    raise ShellEnvError(f'{what}里工具包那一段的开头、结尾标记对不上（只剩一头，或者有两段），'
                         '为了不改坏别的内容，这次没有改它。可以把那几行删干净后再装一次')
+
+
+def read_text(target, what):
+    """读出文件的文字和权限；没有这个文件就是空的、0644。不是 UTF-8 就报错。"""
+    try:
+        raw = target.read_bytes()
+    except FileNotFoundError:
+        return '', 0o644
+    try:
+        return raw.decode('utf-8'), target.stat().st_mode & 0o7777
+    except UnicodeDecodeError:
+        raise ShellEnvError(f'{what} {target} 不是 UTF-8 的文字，没有改它') from None
+
+
+def write_text(target, text, mode):
+    """先写临时文件再换名，写到一半断了也不会留下坏文件；权限照原来的。"""
+    tmp = target.with_name(f'.{target.name}.sop-tmp')
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+        fh.write(text)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.chmod(tmp, mode)
+    os.replace(tmp, target)
 
 
 def install_block(rc=None, tools_dir=None, net=None):
     """把那一段写进终端启动文件（平常是 ~/.bashrc）。内容没变就不写（文件的修改时间也不动）。返回改没改。"""
     rc = pathlib.Path(rc) if rc else rc_file()
     target = pathlib.Path(os.path.realpath(rc))    # 是链接（管点文件的工具常这么做）就写到它指的那个文件
-    try:
-        raw = target.read_bytes()
-    except FileNotFoundError:
-        raw, mode = b'', 0o644
-    else:
-        mode = target.stat().st_mode & 0o7777
-    try:
-        text = raw.decode('utf-8')
-    except UnicodeDecodeError:
-        raise ShellEnvError(f'{rc} 不是 UTF-8 的文字，没有改它') from None
+    text, mode = read_text(target, '终端启动文件')
     new = apply(text, block(tools_dir, net))
     if new == text:
         return False
-    tmp = target.with_name(f'.{target.name}.sop-tmp')
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, 'w', encoding='utf-8') as fh:
-        fh.write(new)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.chmod(tmp, mode)
-    os.replace(tmp, target)
+    write_text(target, new, mode)
     return True

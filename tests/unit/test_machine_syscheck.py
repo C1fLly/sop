@@ -1,4 +1,5 @@
-"""3-07：系统升级后先重跑隔离自检（设计书 4.5）。用造出来的系统组件和假的自检命令测，不碰这台电脑的登记、不跑真的自检。"""
+"""3-07：系统升级后先重跑隔离自检（设计书 4.5）；3-11：M6 跑隔离自检（本机那份加专用 Docker 那份）、通过后记登记。
+用造出来的系统组件和假的自检命令测，不碰这台电脑的登记、不跑真的自检。"""
 import os
 import pathlib
 import stat
@@ -125,20 +126,48 @@ class TestGate(TempHome):
 
 
 class TestRunSelftest(TempHome):
-    def script(self, body):
-        p = self.tmp / 'selftest'
+    def script(self, body, name='selftest'):
+        p = self.tmp / name
         p.write_text(f'#!{sys.executable}\nimport sys, time\n{body}\n')
         p.chmod(0o755)
         return [str(p)]
 
     def test_default_command(self):
-        """默认跑同一个工具包版本里的 runner/selftest.py，用跑 sop 的这个 Python；环境变量能换掉（流程沙箱用）。"""
+        """默认依次跑同一个工具包版本里的本机那份、专用 Docker 那份，用跑 sop 的这个 Python；环境变量能换成一条（流程沙箱用）。"""
         with mock_env({'SOP_SELFTEST_CMD': ''}):
-            cmd = syscheck.selftest_cmd()
-        self.assertEqual(cmd, [sys.executable, '-I', str(REPO / 'runner' / 'selftest.py')])
-        self.assertTrue(pathlib.Path(cmd[-1]).exists())
+            cmds = syscheck.selftest_cmds()
+        self.assertEqual(cmds, [[sys.executable, '-I', str(REPO / 'runner' / 'selftest.py')],
+                                [sys.executable, '-I', str(REPO / 'runner' / 'docker' / 'selftest_docker.py')]])
+        for c in cmds:
+            self.assertTrue(pathlib.Path(c[-1]).exists())
         with mock_env({'SOP_SELFTEST_CMD': '/x/fake'}):
-            self.assertEqual(syscheck.selftest_cmd(), ['/x/fake'])
+            self.assertEqual(syscheck.selftest_cmds(), [['/x/fake']])
+
+    def test_two_parts_both_must_pass(self):
+        """两份都跑：都过才算过；一份没过也接着跑完另一份，不符合的行都列出来，汇总合成一行。"""
+        local_ok = self.script('print("隔离自检：159 项，0 项不符合")', 'local')
+        docker_ok = self.script('print("专用 Docker 的隔离自检：13 项，0 项不符合")', 'docker')
+        docker_bad = self.script('print("不符合 普通容器把根目录挂进去：看不到 ~/tools/sop")\n'
+                                 'print("专用 Docker 的隔离自检：13 项，1 项不符合")\nsys.exit(1)', 'docker-bad')
+        local_bad = self.script('print("不符合 看不到 ~/.ssh")\nprint("隔离自检：159 项，1 项不符合")\nsys.exit(1)', 'local-bad')
+        self.assertEqual(syscheck.run_selftest([local_ok, docker_ok]), (True, ['隔离自检：172 项，0 项不符合']))
+        ok, lines = syscheck.run_selftest([local_ok, docker_bad])
+        self.assertFalse(ok)
+        self.assertEqual(lines, ['不符合 普通容器把根目录挂进去：看不到 ~/tools/sop', '隔离自检：172 项，1 项不符合'])
+        ok, lines = syscheck.run_selftest([local_bad, docker_bad])
+        self.assertFalse(ok)
+        self.assertEqual(lines[-1], '隔离自检：172 项，2 项不符合')
+        self.assertEqual(len([x for x in lines if x.startswith('不符合')]), 2)
+
+    def test_docker_part_cannot_start(self):
+        """专用 Docker 起不来（没装 Docker、服务管理器不在）：算没通过，带上它的报错，汇总里说有一份没跑完。"""
+        local_ok = self.script('print("隔离自检：159 项，0 项不符合")', 'local')
+        docker_down = self.script('print("专用 Docker 起不来，停下：60 秒没起来")\nsys.exit(2)', 'selftest_docker.py')
+        ok, lines = syscheck.run_selftest([local_ok, docker_down])
+        self.assertFalse(ok)
+        self.assertIn('隔离自检中途出错了（退出码 2）：selftest_docker.py', lines[0])
+        self.assertIn('专用 Docker 起不来', '\n'.join(lines))
+        self.assertEqual(lines[-1], '隔离自检：159 项，0 项不符合（有一份没跑完，没算在里面）')
 
     def test_pass(self):
         ok, lines = syscheck.run_selftest(self.script('print("符合   看不到 ~/.ssh")\nprint("隔离自检：1 项，0 项不符合")'))
@@ -171,3 +200,53 @@ class TestRunSelftest(TempHome):
         ok, lines = syscheck.run_selftest(self.script('print("隔离自检：3 项，0 项不符合")\nsys.exit(3)'))
         self.assertFalse(ok)
         self.assertEqual(lines, ['隔离自检：3 项，0 项不符合'])
+
+
+class TestPrepare(TempHome):
+    """M6（装机时）：不管登记里有没有、变没变，都跑一遍隔离自检；通过了记登记，之后第一次推进流程不用再自检。"""
+
+    def run_prepare(self, fake):
+        out = []
+        return syscheck.prepare(collect=fake.collect, selftest=fake.selftest, out=out.append), '\n'.join(out)
+
+    def test_pass_records_then_gate_skips(self):
+        f = Fake(PARTS)
+        ok, out = self.run_prepare(f)
+        self.assertTrue(ok)
+        self.assertEqual(f.tested, 1)
+        self.assertIn('隔离自检通过（159 项，0 项不符合），已记下现在的系统组件版本', out)
+        self.assertEqual(config.system()['components'], PARTS)
+        self.assertEqual(stat.S_IMODE(os.stat(paths.config_dir() / 'system.json').st_mode), 0o600)
+        self.assertEqual(gate(f), (True, ''))           # 装机时登记好了：推进流程直接走
+        self.assertEqual(f.tested, 1)
+
+    def test_runs_even_when_registered(self):
+        """登记里已经是现在的样子，M6 照样跑（重装、修好之后重跑 M6 都要真的验一遍）。"""
+        config.record_system(PARTS)
+        f = Fake(PARTS)
+        self.assertTrue(self.run_prepare(f)[0])
+        self.assertEqual(f.tested, 1)
+
+    def test_fail_keeps_registry(self):
+        config.record_system({**PARTS, 'bubblewrap': '0.10.0'})
+        f = Fake(PARTS, ok=False, lines=['不符合 看不到 ~/.ssh', '隔离自检：172 项，1 项不符合'])
+        ok, out = self.run_prepare(f)
+        self.assertFalse(ok)
+        self.assertIn('隔离自检没通过', out)
+        self.assertIn('不符合 看不到 ~/.ssh', out)
+        self.assertIn('sop repair', out)
+        self.assertEqual(config.system()['components']['bubblewrap'], '0.10.0')
+        f2 = Fake(PARTS, ok=False)
+        self.assertFalse(gate(f2)[0])                   # 没过：推进流程时还会自检
+        self.assertEqual(f2.tested, 1)
+
+    def test_main_entry(self):
+        """python3 -m machine.syscheck 就是 M6；用假的自检跑，过了退出码 0、登记写在临时根目录里。"""
+        from tests.helpers import py
+        fake = self.tmp / 'fake-selftest'
+        fake.write_text(f'#!{sys.executable}\nprint("隔离自检：3 项，0 项不符合")\n')
+        fake.chmod(0o755)
+        p = py('import runpy; runpy.run_module("machine.syscheck", run_name="__main__")', env={'SOP_SELFTEST_CMD': str(fake)})
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('隔离自检通过（3 项，0 项不符合）', p.stdout)
+        self.assertTrue((paths.config_dir() / 'system.json').exists())

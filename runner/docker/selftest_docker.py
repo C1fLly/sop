@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
-"""隔离自检里专用 Docker 的那几项（设计书 16.2、第 19 节第二段验收，v0.9 加的）。**只在虚拟机里跑**（会起专用 Docker）。
+"""隔离自检里专用 Docker 的那几项（设计书 16.2、第 19 节第二段验收，v0.9 加的）。会起一个临时的专用 Docker，
+要用规定位置的免管理员 Docker（~/tools/docker，M2 装的）。M6 和「系统升级后先重跑隔离自检」都跑它（machine/syscheck.py，3-11）。
 
 1. 借专用 Docker，用三种挂法改 .shared/hooks/post-create、.git/config、.git/hooks：
      普通挂载 / 不连带底下几层的挂载（bind-recursive=disabled）/ 管理员容器（--privileged）把只读的那层摘掉再改。
    每次改完，从宿主这边看是不是真的改成了；改成了的，特权侧「用之前核对」必须发现并拒绝执行。每次之后把现场复原。
 2. 经专用 Docker 看不到 ~/tools/sop/state/（AI 状态目录、锁、指纹）和复用 SSH 连接的通道目录（6.2 第一条）。
-用法：python3 -m runner.docker.selftest_docker <镜像>（镜像要带 util-linux 的 mount，例如 debian:stable-slim）"""
+
+跑完收拾干净（3-11 起，因为装机时要在小白的电脑上跑）：假项目在 /tmp 下现建、用完删；~/tools/sop/state/ 下这次用的
+那个项目目录、通道目录里放的假通道文件都删掉；临时服务停掉。留下的只有这个专用 Docker 的数据
+~/tools/docker-sop/sopdk（拉下来的那个小镜像，下次自检不用再拉）。
+拉镜像走网络设置（config/network.json）里的代理；环境变量 SOPD_PROXY 已经给了就用它。
+用法：python3 runner/docker/selftest_docker.py [镜像]（镜像要带 util-linux 的 mount，默认 debian:stable-slim）"""
 import hashlib
 import os
 import pathlib
 import shutil
 import subprocess
 import sys
+import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
@@ -20,7 +27,7 @@ from kernel.errors import Tampered  # noqa: E402
 from runner import aistate  # noqa: E402
 from runner.selftest import make_fixture  # noqa: E402
 
-PROJECT = 'sopdk'
+PROJECT = 'sopdk'          # 这次自检用的项目名：state/sopdk、docker-sop/sopdk、服务 sop-docker-test-sopdk
 DOCKER = str(pathlib.Path.home() / 'tools' / 'docker' / 'bin' / 'docker')
 
 
@@ -48,22 +55,56 @@ def restore(R, orig):
             p.chmod(0o644); p.unlink()
 
 
+def proxy():
+    """拉镜像用的代理：SOPD_PROXY 给了就用它，否则用网络设置里的（读不出来就不用）。"""
+    if 'SOPD_PROXY' in os.environ:
+        return os.environ['SOPD_PROXY']
+    try:
+        from machine import config
+        net = config.network()
+    except Exception:          # 登记坏了也不挡自检；拉不下镜像时会明说
+        return ''
+    return net.get('https_proxy') or net.get('http_proxy') or ''
+
+
+def cleanup(tmp, rt_file):
+    """收拾这次自检在电脑上留下的：/tmp 下的假项目、state 下这个项目的目录（里面有封存成只读的状态目录）、假通道文件。"""
+    for d in (tmp, paths.sop_home() / 'state' / PROJECT):
+        if os.path.exists(d):
+            subprocess.run(['chmod', '-R', 'u+w', str(d)], capture_output=True)
+            shutil.rmtree(d, ignore_errors=True)
+    try:
+        os.unlink(rt_file)
+    except FileNotFoundError:
+        pass
+
+
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else 'debian:stable-slim'
-    base = pathlib.Path.home() / 'Project'
-    shutil.rmtree(base / 'sopdk-fixture', ignore_errors=True)
-    (base / 'sopdk-fixture').mkdir(parents=True)
-    R, _ = make_fixture(base / 'sopdk-fixture')       # R = ~/Project/sopdk-fixture/Project/demo
+    if os.path.exists(paths.sop_home() / 'state' / PROJECT / 'ai-state'):
+        print(f'{paths.sop_home() / "state" / PROJECT} 已经有东西（真有一个叫 {PROJECT} 的项目？），不动它，停下'); return 2
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix='sop-selftest-docker-', dir='/tmp'))
+    rt_file = paths.runtime_dir() / 'ssh-假的通道'
+    try:
+        return run(image, tmp, rt_file)
+    finally:
+        cleanup(tmp, rt_file)
+
+
+def run(image, tmp, rt_file):
+    R, _ = make_fixture(tmp)                          # R = /tmp/sop-selftest-docker-…/Project/demo
     (R / '.git' / 'hooks').mkdir(exist_ok=True)
     precheck.record(PROJECT, R)
     a = aistate.fresh(PROJECT, 'fake', 'T3', lambda d: (d / 'settings.json').write_text('{}'))
     aistate.seal(a)
-    rt = paths.runtime_dir(); (rt / 'ssh-假的通道').write_text('')
+    rt = rt_file.parent
+    rt_file.write_text('')
     orig = {'post-create': (R / '.shared/hooks/post-create').read_bytes(), 'config': (R / '.git/config').read_bytes(),
             'hooks': sorted(os.listdir(R / '.git' / 'hooks'))}
-    sock = subprocess.run([str(REPO / 'runner/docker/start_test.sh'), PROJECT, str(R)], capture_output=True, text=True)
+    sock = subprocess.run([str(REPO / 'runner/docker/start_test.sh'), PROJECT, str(R)], capture_output=True, text=True,
+                          env={**os.environ, 'SOPD_PROXY': proxy()})
     if sock.returncode:
-        print('专用 Docker 起不来，停下：', sock.stderr[-800:]); return 2
+        print('专用 Docker 起不来，停下：', sock.stderr[-800:]); return 2      # 没有汇总行：syscheck 当成「中途出错」
     sock = sock.stdout.strip()
     try:
         if docker(sock, 'image', 'inspect', image).returncode:

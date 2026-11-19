@@ -118,7 +118,10 @@ class State:
         """照 GitHub 上的守门检查流程：检出主线；按主线 sop.json 取工具包那个版本；跑它的 guard.py（不检出、不运行 PR 的代码）。"""
         with tempfile.TemporaryDirectory(prefix='fakegh-guard-') as td:
             main = os.path.join(td, 'main')
-            git('clone', '-q', '--branch', 'main', self.remote, main)
+            # --no-local：像真的 GitHub 一样走正常的传输（打包传过来），不直接拷或硬链接假远程里的对象文件。
+            # 本地克隆会逐个拷 objects 目录，这时 sop 同时在往假远程推事件日志，正推的临时对象文件拷到一半被改名或删掉，
+            # 就报 hardlink different from source（加 --no-hardlinks 也只是改报「无法拷贝文件」）。见 docs/第三段/3-52。
+            git('clone', '-q', '--no-local', '--branch', 'main', self.remote, main)
             sop = json.load(open(os.path.join(main, 'sop.json')))
             tk = os.path.join(td, 'toolkit')
             git('init', '-q', tk)

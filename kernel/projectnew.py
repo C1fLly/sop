@@ -1,6 +1,6 @@
 """sop project new（设计书 7.2 项目初始化流程）。这里做本机的几步：I0 红线预问、I1 选公开还是私有、I3 写项目模板、
-I4 装技能和技能配置；GitHub 那几步（I2 建仓库和目录、I5 首次推主线、I6 建日志分支和开保护、I7 四个试验 PR）在 3-24 接上，
-这里只留接口 GitHubSide。
+I4 装技能和技能配置；GitHub 那几步（I2 建仓库和目录、I5 首次推主线、I6 建日志分支和开保护、I7 四个试验 PR）在
+kernel/projectgh.py（3-24），接口是 GitHubSide。
 
 顺序（7.2）：I0、I1 先问，命中红线就停，这时候还没有建任何仓库、项目根也没有建；I2 用 wt init --create 建 GitHub 仓库和本机的
 项目根（GitHub 建仓库时带一个 README 提交，wt 把它取下来放在 main/）；I3、I4 往 main/ 里写，出口检查是目录结构检查
@@ -8,6 +8,10 @@ I4 装技能和技能配置；GitHub 那几步（I2 建仓库和目录、I5 首�
 
 I0、I1 的回答暂存本机：~/tools/sop/state/<项目名>/init/redline.json、visibility.json（P1 风险分级沿用 I0 的答案）。
 公开还是私有另写进 sop.json 的 visibility。
+
+断了重跑（3-24）：进度记在 state/<项目名>/init/progress.json。再执行 sop project new <项目名> 时不再问 I0、I1（回答已经记下），
+从没做完的那一步接着做：I2 由 GitHub 那一边自己认（仓库建了没有、本机目录建到哪了）；I3、I4 写到一半的（main/ 上还没有提交）
+先把 main/ 恢复成刚取下来的样子再写，已经提交了的不重写；I5 到 I7 见 kernel/projectgh.py。
 """
 import datetime
 import json
@@ -18,7 +22,7 @@ import sys
 
 from checks.project_layout import check as layout_check, core as layout
 
-from . import paths
+from . import paths, projectgh
 from .errors import SopError
 from .gitx import Git
 
@@ -197,30 +201,44 @@ def verify_layout(dest, toolkit=TOOLKIT, root=None):
     return line
 
 
+INITIAL_MESSAGE = 'chore: 项目初始内容（工具包的项目模板、技能和技能配置）'
+
+
 def write_initial(root, name, visibility, repo, version, toolkit=TOOLKIT):
-    """I3、I4：往项目根的 main/ 里写，过出口检查，在本机提交一次（关钩子，特权侧自己的 Git），推送是 I5 的事。"""
+    """I3、I4：往项目根的 main/ 里写，过出口检查，在本机提交一次（关钩子，特权侧自己的 Git），推送是 I5 的事。
+    重跑时：main/ 上已经有这一次提交的，只再过一遍出口检查；还没有提交、写到一半的，先把 main/ 恢复成刚取下来的样子
+    （改过的文件恢复、新加的文件删掉；被 Git 忽略的不动）再写。"""
     root = pathlib.Path(root)
     main = root / 'main'
+    g = Git(root / '.git' / 'worktrees' / 'main', main)
+    got, head = g.rev('refs/remotes/origin/main'), g.rev('HEAD')
+    if head and head != got:
+        if g.rev('HEAD~1') == got and g('log', '-1', '--format=%s') == INITIAL_MESSAGE:
+            return verify_layout(main, toolkit, root)
+        raise SopError(f'{main} 上有不认识的提交，不接着往里写。启动维修窗口（sop repair）看一下。')
+    if g('status', '--porcelain'):
+        g('checkout', '-q', '--', '.')
+        g('clean', '-q', '-fd')
     write_template(main, name, visibility, repo, version, toolkit)
+    projectgh.test_break('mid-I3I4')
     install_skills(main, toolkit)
     line = verify_layout(main, toolkit, root)
-    g = Git(root / '.git' / 'worktrees' / 'main', main)
     g('add', '-A')
-    g('commit', '-q', '--no-verify', '-m', 'chore: 项目初始内容（工具包的项目模板、技能和技能配置）')
+    g('commit', '-q', '--no-verify', '-m', INITIAL_MESSAGE)
     return line
 
 
-# ---------- GitHub 那一半（3-24） ----------
+# ---------- GitHub 那一半（kernel/projectgh.py，3-24） ----------
 class GitHubSide:
-    """I2、I5、I6、I7 的接口。3-24 接上真的：create 用 wt init --create（带 WT_TEMPLATE，kernel/wtx.py）建 GitHub 仓库和项目根；
-    publish 做首次推主线、建日志分支、开保护、设事件规则、四个试验 PR。这里还没做，调用就停下说明。"""
+    """I2、I5、I6、I7 的接口：create(项目名, 项目根, 公开还是私有) 建 GitHub 仓库和项目根（I2），在 I3、I4 之前；
+    publish(项目根, 公开还是私有) 做首次推主线、建日志分支、开保护、设事件规则、四个试验 PR（I5 到 I7），在之后。
+    真的那一份是 kernel/projectgh.GitHub；自测可以换成替身。"""
 
     def create(self, name, root, visibility):
-        raise SopError('在 GitHub 上建仓库（I2）和之后推送、开保护、试验 PR（I5 到 I7）还没做（任务 3-24）。'
-                       '红线预问和公开还是私有的选择已经记下，还没有建任何仓库、也没有建项目目录。')
+        raise NotImplementedError
 
     def publish(self, project_root, visibility):
-        raise SopError('首次推主线、建日志分支、开保护、试验 PR（I5 到 I7）还没做（任务 3-24）')
+        raise NotImplementedError
 
 
 def toolkit_source(toolkit=TOOLKIT):
@@ -244,26 +262,57 @@ def git_identity():
     return all(got)
 
 
+def _resumable(name):
+    """上次没做完的进度（I0 没命中红线、I1 选好了才会有）。"""
+    prog = projectgh.load_progress(name)
+    if not prog:
+        return None
+    d = paths.state_dir(name) / 'init'
+    try:
+        red = json.loads((d / 'redline.json').read_text(encoding='utf-8'))
+        vis = json.loads((d / 'visibility.json').read_text(encoding='utf-8'))['visibility']
+    except (OSError, ValueError, KeyError):
+        raise SopError(f'项目 {name} 上次的进度记录不全（{d}），没法接着做。启动维修窗口（sop repair）看一下。')
+    if red.get('hits') or vis != prog.get('visibility'):
+        raise SopError(f'项目 {name} 上次的进度记录对不上（{d}），没法接着做。启动维修窗口（sop repair）看一下。')
+    return prog
+
+
 def new_project(name, human, github=None, toolkit=TOOLKIT):
-    """sop project new 的全过程。返回项目根。"""
+    """sop project new 的全过程。返回项目根。断了重跑时从没做完的那一步接着做。"""
     paths.check_project_name(name)
     root = paths.projects_dir() / name
-    if os.path.lexists(root) and (not root.is_dir() or any(root.iterdir())):
-        raise SopError(f'{root} 已经有东西了，换一个项目名，或者先把它挪走')
-    if not human.can(SCOPE, f'I0-{REDLINE[0]["id"]}'):
-        raise SopError('sop project new 要在终端里回答几个问题，请在终端里直接执行')
-    print('先问几个问题，看这个项目在不在本工具包能做的范围里（不用懂技术，按实际情况选）。')
-    ask_redlines(name, human)
-    vis = ask_visibility(name, human)
+    prog = _resumable(name)
+    if prog and prog.get('finished'):
+        raise SopError(f'项目 {name} 已经建好了：{root}')
+    if prog:
+        vis = prog['visibility']
+        print(f'项目 {name} 上次没建完，接着做（前面几个问题的回答已经记下，不再问）。')
+    else:
+        if os.path.lexists(root) and (not root.is_dir() or any(root.iterdir())):
+            raise SopError(f'{root} 已经有东西了，换一个项目名，或者先把它挪走')
+        if not human.can(SCOPE, f'I0-{REDLINE[0]["id"]}'):
+            raise SopError('sop project new 要在终端里回答几个问题，请在终端里直接执行')
+        print('先问几个问题，看这个项目在不在本工具包能做的范围里（不用懂技术，按实际情况选）。')
+        ask_redlines(name, human)
+        vis = ask_visibility(name, human)
     repo, version = toolkit_source(toolkit)
     if not git_identity():
         raise SopError('这台电脑上 Git 的提交身份（名字和邮箱）还没设，项目的第一次提交做不了。'
                        '先做机器准备里登录 GitHub 那一步（sop machine setup），它会设好。还没有建任何仓库。')
-    github = github or GitHubSide()
-    github.create(name, root, vis)                    # I2
-    line = write_initial(root, name, vis, repo, version, toolkit)   # I3、I4
-    print(line)
-    github.publish(root, vis)                          # I5 到 I7
+    if not prog:
+        projectgh.save_progress(name, visibility=vis, done=[], started=_now())
+    github = github or projectgh.GitHub()
+    if not projectgh.is_done(name, 'I2'):
+        github.create(name, root, vis)                                 # I2
+        projectgh.mark_done(name, 'I2')
+        projectgh.test_break('after-I2')
+    if not projectgh.is_done(name, 'I3I4'):
+        line = write_initial(root, name, vis, repo, version, toolkit)  # I3、I4
+        projectgh.mark_done(name, 'I3I4')
+        print(line)
+    github.publish(root, vis)                                          # I5 到 I7
+    projectgh.save_progress(name, finished=_now())
     return root
 
 

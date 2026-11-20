@@ -3,7 +3,7 @@
 - 装哪些技能：附录 B 直接列的，加上从技能原文里查出来的被依赖的，正好是附录 B 那 21 个。
 - 复制出来的技能和工具包副本逐字一致：按 Git 的算法算每个技能目录的树编号，和 skills/source.json 里记的上游指纹算出来的比，
   提交以后再用 Git 自己的 rev-parse 比一次；许可文件同样比。
-- 全过程：剧本里的人回答 I0、I1；I2 用本机的 wt（只用不改）在 /tmp 的假远程上代替 GitHub（3-24 才接真的）；
+- 全过程：剧本里的人回答 I0、I1；I2 用本机的 wt（只用不改）在 /tmp 的假远程上代替 GitHub（真的那一份见 kernel/projectgh.py 和流程沙箱 tests/sandbox/test_project_new.py）；
   主目录、TMPDIR 都指到临时目录，PATH 里的 gh 是只记账的假的。
 - 命中红线时停下，GitHub 那一边一次都没被调用，项目根没建。"""
 import json
@@ -123,7 +123,7 @@ class TestWriteFiles(TempHome):
 
 
 class LocalGitHub:
-    """I2 的替身（3-24 接真的）：在 /tmp 造一个像 gh repo create --add-readme 那样带一个 README 提交的远程，再经接入层 wt init。"""
+    """I2 的替身（真的那一份是 kernel/projectgh.GitHub，3-24）：在 /tmp 造一个像 gh repo create --add-readme 那样带一个 README 提交的远程，再经接入层 wt init。"""
 
     def __init__(self, tmp):
         self.tmp, self.calls = pathlib.Path(tmp), []
@@ -243,13 +243,18 @@ class TestRedLineAndStops(FlowBase):
                     rec = P.ask_redlines('demo', self.human({k: v for k, v in answers(**{q['id']: n}).items() if 'I0' in k}))
                     self.assertEqual(rec['hits'], [])
 
-    def test_github_part_not_done_yet(self):
-        """默认的 GitHub 那一半还没做（3-24）：问完 I0、I1 停下，说明白，什么都没建。"""
+    def test_stops_when_github_account_unknown(self):
+        """默认的 GitHub 那一半（3-24）：gh 查不到登录的账号时，问完 I0、I1 停下，说明白，什么都没建；进度记下了，重跑不再问。"""
         with self.assertRaises(SopError) as e:
             P.new_project('demo', self.human(answers()))
-        self.assertIn('3-24', str(e.exception))
+        self.assertIn('查不到这台电脑上 gh 登录的 GitHub 账号', str(e.exception))
         self.assertFalse(self.root.exists())
-        self.assertEqual(set(self.records()), {'redline.json', 'visibility.json'})
+        self.assertEqual(set(self.records()), {'redline.json', 'visibility.json', 'progress.json'})
+        self.assertEqual(self.records()['progress.json']['done'], [])
+        self.assertEqual(self.ghlog.read_text().splitlines(), ['api user --jq .login'])
+        with self.assertRaises(SopError):                 # 重跑：不再问（剧本里的回答已经用完了也能接着走到 gh 那一步）
+            P.new_project('demo', self.human({}))
+        self.assertEqual(self.ghlog.read_text().splitlines(), ['api user --jq .login'] * 2)
 
     def test_refuses_existing_root_before_asking(self):
         self.root.mkdir()
@@ -274,15 +279,15 @@ class TestRedLineAndStops(FlowBase):
         self.assertFalse(self.root.exists())
 
     def test_cli(self):
-        """经命令行：sop project new demo（剧本回答），问完停在 GitHub 那一步；项目名不对、参数不对时说用法。"""
+        """经命令行：sop project new demo（剧本回答），问完停在 GitHub 那一步（假 gh 什么都答不上来）；项目名不对、参数不对时说用法。"""
         self.script.write_text(json.dumps(answers(), ensure_ascii=False))
         env = {**os.environ, 'PYTHONPATH': str(REPO), 'SOP_HUMAN_SCRIPT': str(self.script)}
         run = lambda *a: subprocess.run([sys.executable, '-m', 'kernel.cli', 'project', 'new', *a], cwd=self.tmp, env=env,   # noqa: E731
                                         capture_output=True, text=True, stdin=subprocess.DEVNULL)
         r = run('demo')
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        self.assertIn('3-24', r.stdout)
-        self.assertEqual(set(self.records()), {'redline.json', 'visibility.json'})
+        self.assertIn('GitHub 账号', r.stdout)
+        self.assertEqual(set(self.records()), {'redline.json', 'visibility.json', 'progress.json'})
         self.assertFalse(self.root.exists())
         for bad in (('Demo',), (), ('a', 'b')):
             self.assertEqual(run(*bad).returncode, 2)

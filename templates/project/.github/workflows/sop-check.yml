@@ -1,24 +1,57 @@
-# 项目检查（设计书 6.4）：运行 PR 里的代码（门禁）。定义取自 PR 自己，单靠它不算数。
-# 第二段只在本机的流程沙箱里由假的 gh 模拟；在真的 GitHub 上第 2a 期验。
+# 项目检查（设计书 6.4）：运行 PR 里的代码（门禁）。定义取自 PR 自己，单靠它不算数（还有守门检查）。
+# 两档都跑工具包的 checks/project_check（目录结构检查加门禁）；工具包按主线 sop.json 声明的版本从工具包仓库取。
+# 还没有技术栈档案时门禁暂不适用、算通过；声明了档案却没有门禁命令算失败（3-24，问题 6）。
+# 只在本机的流程沙箱里由假的 gh 模拟过；在真的 GitHub 上 3-26 验。
 name: sop-check
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]   # 要写「转正式」，GitHub 默认不在这时候跑（6.4）
+permissions:
+  contents: read
 jobs:
   fast:
     name: fast
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: 快档门禁
-        # 第 2a 期接上档案的门禁命令。在那之前明确失败：宁可红，不能空跑出绿
-        run: echo '门禁还没接上档案（第 2a 期）' && exit 1
+        env:
+          TIER: fast
+        run: |
+          set -euo pipefail
+          read -r REPO VER < <(git show origin/main:sop.json | python3 -c 'import json, sys; t = json.load(sys.stdin)["toolkit"]; print(t["repo"], t["version"])')
+          git init -q /tmp/sop-toolkit
+          git -C /tmp/sop-toolkit fetch -q --depth 1 "$REPO" "$VER"
+          git -C /tmp/sop-toolkit checkout -q FETCH_HEAD
+          python3 -c 'import json, os, sys; json.dump({"dir": os.getcwd(), "toolkit": "/tmp/sop-toolkit", "tier": sys.argv[1]}, open("/tmp/sop-args.json", "w"))' "$TIER"
+          rc=0
+          python3 /tmp/sop-toolkit/checks/project_check/check.py /tmp/sop-args.json --report /tmp/sop-report.json || rc=$?
+          # 只认检查自己写出的结论（3-57）：报告里记的退出码要和进程的一样，并且是 0
+          python3 -c 'import json, sys; r = json.load(open("/tmp/sop-report.json")); sys.exit(0 if r.get("退出码") == int(sys.argv[1]) == 0 else 1)' "$rc"
   full:
     name: full
     # 全档只在「目标是 main 且已转正式」的 PR 上跑；被跳过时 GitHub 算「成功」，所以 F19 只认真跑完的（6.4）
     if: ${{ github.base_ref == 'main' && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: 全档门禁
-        run: echo '门禁还没接上档案（第 2a 期）' && exit 1
+        env:
+          TIER: full
+        run: |
+          set -euo pipefail
+          read -r REPO VER < <(git show origin/main:sop.json | python3 -c 'import json, sys; t = json.load(sys.stdin)["toolkit"]; print(t["repo"], t["version"])')
+          git init -q /tmp/sop-toolkit
+          git -C /tmp/sop-toolkit fetch -q --depth 1 "$REPO" "$VER"
+          git -C /tmp/sop-toolkit checkout -q FETCH_HEAD
+          python3 -c 'import json, os, sys; json.dump({"dir": os.getcwd(), "toolkit": "/tmp/sop-toolkit", "tier": sys.argv[1]}, open("/tmp/sop-args.json", "w"))' "$TIER"
+          rc=0
+          python3 /tmp/sop-toolkit/checks/project_check/check.py /tmp/sop-args.json --report /tmp/sop-report.json || rc=$?
+          # 只认检查自己写出的结论（3-57）：报告里记的退出码要和进程的一样，并且是 0
+          python3 -c 'import json, sys; r = json.load(open("/tmp/sop-report.json")); sys.exit(0 if r.get("退出码") == int(sys.argv[1]) == 0 else 1)' "$rc"

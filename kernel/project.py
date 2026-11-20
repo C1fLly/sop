@@ -89,11 +89,12 @@ class Project:
             wtx.set_base(self.name, self.root, branch, target)
 
     # ---------- gh ----------
-    def gh(self, *args, check=True, as_json=False):
+    def gh(self, *args, check=True, as_json=False, input=None):
         with self.gitlock:
             precheck.verify(self.name, self.root, self.worktrees())
         env = clean_env({'GH_REPO': self.slug(), 'GH_PROMPT_DISABLED': '1'})
-        p = subprocess.run(['gh', *args], cwd=self.root, env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        p = subprocess.run(['gh', *args], cwd=self.root, env=env, capture_output=True, text=True, input=input,
+                           stdin=subprocess.DEVNULL if input is None else None)
         if check and p.returncode:
             raise SopError(f'gh {" ".join(args[:3])} 失败：{p.stderr.strip()[-500:]}')
         return json.loads(p.stdout) if as_json and p.returncode == 0 else p

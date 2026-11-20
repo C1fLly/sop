@@ -18,8 +18,8 @@
 | `skills/` | 技能副本：mattpocock/skills 在提交 `5863806` 时的 `skills/` 和许可文件，原样（`skills/mattpocock/`），版本记录 `source.json`；总检查的 `checks/skills_pristine` 每次逐字核对，见 `skills/README.md` |
 | `adapters/ai/` | AI 工具适配器（目前只有测试用的 `fake`） |
 | `profiles/` | 技术栈、端、部署档案（目前只有测试用的） |
-| `templates/` | 新项目仓库的初始文件（`sop project new` 的 I3 原样复制，见 `kernel/projectnew.py`；装哪些技能、目录结构检查在 `checks/project_layout/`）、wt 用的模板 |
-| `tests/` | 自测：单元测试、流程沙箱、假的 `gh`；`tests/vm/` 是验证用的虚拟机脚本（按名字现建、一键还原；`m2.sh`、`docker.sh` 在虚拟机里验 M2 安装，`m6m7.sh` 验 M6、M7，`m0.sh` 验第零步，`offline.sh` 验离线包，`dockersvc.sh` 验专用 Docker 的服务和分组，`dockeridle.sh` 验它用时才起、闲了停，`twoproj.sh` 验两个项目同时开（3-19），`aptlock.sh` 验系统正在自己更新软件时装系统软件包会等它（3-56）；不在 `run_all.py` 里） |
+| `templates/` | 新项目仓库的初始文件（`sop project new` 的 I3 原样复制，见 `kernel/projectnew.py`；装哪些技能、目录结构检查在 `checks/project_layout/`；GitHub 那一半 I2、I5 到 I7 在 `kernel/projectgh.py`；检查流程 `sop-check.yml` 跑的项目检查是 `checks/project_check/`）、wt 用的模板 |
+| `tests/` | 自测：单元测试、流程沙箱、假的 `gh`（`sop project new` 新建的仓库检查真跑，见它开头的说明）；`tests/vm/` 是验证用的虚拟机脚本（按名字现建、一键还原；`m2.sh`、`docker.sh` 在虚拟机里验 M2 安装，`m6m7.sh` 验 M6、M7，`m0.sh` 验第零步，`offline.sh` 验离线包，`dockersvc.sh` 验专用 Docker 的服务和分组，`dockeridle.sh` 验它用时才起、闲了停，`twoproj.sh` 验两个项目同时开（3-19），`aptlock.sh` 验系统正在自己更新软件时装系统软件包会等它（3-56）；不在 `run_all.py` 里） |
 | `docs/` | 设计书、审查记录、试验记录 |
 
 ## 跑自测

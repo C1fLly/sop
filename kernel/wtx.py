@@ -77,8 +77,10 @@ def call(project, root, *args, cwd=None, slug=None, check=True):
     return p
 
 
-def init(project, root, slug, url, *, create=False, public=False, hook=True):
+def init(project, root, slug, url, *, create=False, public=False, hook=True, settings=False):
     """建项目（I2，或克隆时建本机的项目根）：裸仓库 .git、.shared/（工具包的模板）、默认分支目录。
+    create：先在 GitHub 上建仓库（wt 同时设好只允许压成一次提交的合并、合并后删分支）；
+    settings：仓库已经有了（例如 I2 建完仓库就断了、重跑时），只设那几项合并的设置。
     建之前项目根还不存在，没有东西可核对；建完记下 .git/config 的指纹，再整个核对一遍。"""
     root = pathlib.Path(root)
     paths.check_project_name(project)
@@ -88,6 +90,8 @@ def init(project, root, slug, url, *, create=False, public=False, hook=True):
     args = ['init', slug, '--url', str(url), '--dir', str(root)]
     if create:
         args += ['--create', '--public' if public else '--private']
+    elif settings:
+        args.append('--settings')
     if not hook:
         args.append('--no-hook')
     p = _run(args, root.parent, slug)

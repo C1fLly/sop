@@ -10,7 +10,7 @@
 专用 Docker 用正式的后台服务和分组起（runner/docker/service.py，3-17）：sop-docker-sopdk.service 放在分组 sop-sopdk.slice 里，
 和真项目的一模一样，所以测的就是真项目会用的那一套。
 跑完收拾干净（3-11 起，因为装机时要在小白的电脑上跑）：假项目在 /tmp 下现建、用完删；~/tools/sop/state/ 下这次用的
-那个项目目录、通道目录里放的假通道文件都删掉；服务停掉、两份登记文件删掉（里面写着 /tmp 下这次的假项目）。留下的只有这个
+那个项目目录、通道目录里放的假通道文件都删掉；服务停掉、登记文件（服务、分组、3-18 加的闲了停的计时器和它的服务）删掉（里面写着 /tmp 下这次的假项目）。留下的只有这个
 专用 Docker 的数据 ~/tools/docker-sop/sopdk（拉下来的那个小镜像，下次自检不用再拉）。
 拉镜像走网络设置（config/network.json）里的代理；环境变量 SOPD_PROXY 已经给了就用它（service.proxy）。
 用法：python3 runner/docker/selftest_docker.py [镜像]（镜像要带 util-linux 的 mount，默认 debian:stable-slim）"""

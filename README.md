@@ -18,7 +18,7 @@
 | `adapters/ai/` | AI 工具适配器（目前只有测试用的 `fake`） |
 | `profiles/` | 技术栈、端、部署档案（目前只有测试用的） |
 | `templates/` | 新项目仓库的初始文件、wt 用的模板 |
-| `tests/` | 自测：单元测试、流程沙箱、假的 `gh`；`tests/vm/` 是验证用的虚拟机脚本（按名字现建、一键还原；`m2.sh`、`docker.sh` 在虚拟机里验 M2 安装，`m6m7.sh` 验 M6、M7，`m0.sh` 验第零步，`offline.sh` 验离线包，`dockersvc.sh` 验专用 Docker 的服务和分组；不在 `run_all.py` 里） |
+| `tests/` | 自测：单元测试、流程沙箱、假的 `gh`；`tests/vm/` 是验证用的虚拟机脚本（按名字现建、一键还原；`m2.sh`、`docker.sh` 在虚拟机里验 M2 安装，`m6m7.sh` 验 M6、M7，`m0.sh` 验第零步，`offline.sh` 验离线包，`dockersvc.sh` 验专用 Docker 的服务和分组，`dockeridle.sh` 验它用时才起、闲了停；不在 `run_all.py` 里） |
 | `docs/` | 设计书、审查记录、试验记录 |
 
 ## 跑自测

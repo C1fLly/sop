@@ -24,6 +24,8 @@ from runner import aistate, placement, sandbox
 
 NAMES = {'fast': 'fast', 'full': 'full', 'guard': 'guard'}
 RESULT_KIND = {'ticket_impl': 'impl', 'planning': 'planning', 'std_draft': 'planning', 'readonly': 'review'}
+# 会运行项目代码的 AI 步骤（工单上的实现要跑测试，测试可能起容器）才给专用 Docker 的通道（6.3 四）；规划、只看不改的步骤不给
+DOCKER_KINDS = ('ticket_impl', 'implement_spec')
 
 
 def R(*a, **kw):
@@ -238,6 +240,7 @@ def ai_step(eng, f, sc, step, attempt, pos):
         ro = list(ro) + [str(p.state / 'ai-state')]
     ctx = placement.Ctx(root=p.root, kind=kind, worktree=wt, feature=f.name, task_dir=d / 'task', out_dir=d / 'out',
                         ro=ro, env=env, pass_env=pass_env, chdir=wdir,
+                        docker_sock=eng.docker() if kind in DOCKER_KINDS else None,
                         interactive=step['actor'] == 'ai_interactive' and getattr(eng.human, 'interactive', False))
     if step['actor'] == 'ai_interactive':
         out = eng.adapter.resume(ctx, d / 'task', st_dir, session, '接着做下一步') if session else eng.adapter.start_interactive(ctx, d / 'task', st_dir)
@@ -344,7 +347,7 @@ def gate_step(eng, f, sc, step, attempt):
     env = {k: p.expand(v, prof) for k, v in tc.get('env', {}).items()}
     cache = p.root / '.shared' / 'cache'
     ctx = placement.Ctx(root=p.root, kind='restricted_script', worktree=wt, feature=f.name, task_dir=d / 'task', out_dir=d / 'out',
-                        ro=ro, rw=[str(cache)] if cache.is_dir() else [], env=env)
+                        ro=ro, rw=[str(cache)] if cache.is_dir() else [], env=env, docker_sock=eng.docker(prof))
     r = sandbox.run(ctx, cmd, timeout=3600)
     rep_p = d / 'out' / 'report.json'
     if not rep_p.exists():
@@ -606,7 +609,8 @@ def t_open(eng, f, t, step, attempt, pos):
     prof = p.profile()
     if prof and prof['commands'].get('setup'):   # 依赖由流程命令在受限侧装，不交给 wt 的准备脚本（5.6）
         ctx = placement.Ctx(root=p.root, kind='restricted_script', worktree=t.wt, feature=f.name,
-                            ro=[x for x in (p.expand(y, prof) for y in prof['toolchain'].get('ro', [])) if x])
+                            ro=[x for x in (p.expand(y, prof) for y in prof['toolchain'].get('ro', [])) if x],
+                            docker_sock=eng.docker(prof))
         r = sandbox.run(ctx, [p.expand(x, prof) for x in prof['commands']['setup']], timeout=3600)
         if r.returncode:
             return R(False, f'装依赖失败：{(r.stdout + r.stderr)[-300:]}', hold=True)

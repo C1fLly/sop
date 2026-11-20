@@ -182,7 +182,7 @@ class TestOomScore(Base):
 
 class TestInstall(Base):
     def test_install_writes_once(self):
-        """写两份登记文件（只有自己能读：里面可能有代理的账号密码）、拷换根脚本、建数据目录；
+        """写四份登记文件（只有自己能读：里面可能有代理的账号密码）、拷换根脚本、建数据目录；
         再装一次什么都不改（内容、修改时间都不动，也不让服务管理器重读）。"""
         ctl = FakeCtl()
         self.assertTrue(S.install('my-app', self.root, {'memory': '300M'}, ctl=ctl))
@@ -201,7 +201,8 @@ class TestInstall(Base):
         self.assertFalse(S.install('my-app', self.root, {'memory': '300M'}, ctl=ctl))
         self.assertEqual(ctl.calls, [('daemon-reload',)])
         self.assertEqual([f.stat().st_mtime_ns for f in (sv, sl, wrap)], mt)
-        self.assertEqual(sorted(os.listdir(self.units)), ['sop-docker-my-app.service', 'sop-my\\x2dapp.slice'])
+        self.assertEqual(sorted(os.listdir(self.units)), ['sop-docker-my-app-idle.service', 'sop-docker-my-app-idle.timer',
+                                                          'sop-docker-my-app.service', 'sop-my\\x2dapp.slice'])
 
     def test_change_limit_rewrites(self):
         """改了上限、手改过登记文件：按工具包的重写，再让服务管理器重读。"""
@@ -222,20 +223,21 @@ class TestInstall(Base):
         other.mkdir()
         S.install('my-app', self.root, ctl=ctl)
         S.install('my', other, ctl=ctl)
-        self.assertEqual(sorted(os.listdir(self.units)),
+        self.assertEqual(sorted(x for x in os.listdir(self.units) if '-idle.' not in x),
                          ['sop-docker-my-app.service', 'sop-docker-my.service', 'sop-my.slice', 'sop-my\\x2dapp.slice'])
+        self.assertIn('sop-docker-my.service', (self.units / 'sop-docker-my-idle.service').read_text())
         self.assertIn('Slice=sop-my.slice\n', (self.units / 'sop-docker-my.service').read_text())
         self.assertIn(f'"SOPD_PROJ={other}"', (self.units / 'sop-docker-my.service').read_text())
 
     def test_remove_keeps_data(self):
-        """删掉：停服务、删两份登记文件、让服务管理器重读；数据目录（镜像、数据卷）不动。"""
+        """删掉：停服务（连同闲了停的计时器）、删四份登记文件、让服务管理器重读；数据目录（镜像、数据卷）不动。"""
         ctl = FakeCtl()
         S.install('my-app', self.root, ctl=ctl)
         (self.tools / 'docker-sop' / 'my-app' / 'data' / '镜像').write_text('x')
         ctl.calls.clear()
         S.remove('my-app', ctl=ctl)
         self.assertEqual(os.listdir(self.units), [])
-        self.assertEqual(ctl.calls[0], ('stop', 'sop-docker-my-app.service'))
+        self.assertEqual(ctl.calls[0], ('stop', 'sop-docker-my-app.service', 'sop-docker-my-app-idle.timer'))
         self.assertIn(('daemon-reload',), ctl.calls)
         self.assertTrue((self.tools / 'docker-sop' / 'my-app' / 'data' / '镜像').exists())
         ctl.calls.clear()
@@ -260,3 +262,158 @@ class TestSelftestUsesService(Base):
         self.assertIn('service.remove(PROJECT)', src)
         self.assertNotIn('start_test', src)
         self.assertFalse((REPO / 'runner' / 'docker' / 'start_test.sh').exists())
+
+
+class TestIdle(Base):
+    """3-18：用时才起、闲了停（用户定的：sop 退出后 15 分钟没再用就停）。真的起、停、再起在虚拟机里验（tests/vm/dockersvc.sh）。"""
+
+    def test_timer_units(self):
+        """专用 Docker 起来时把计时器带起来（Wants）、它停了计时器跟着停（PartOf）；每分钟跑一次闲了停的脚本；
+        两份都不设成登录后自己起来。脚本在数据目录（专用 Docker 的视野里没有），「在用」锁在 state 下。"""
+        f = self.files()
+        sv, tm, isv = f['sop-docker-my-app.service'], f['sop-docker-my-app-idle.timer'], f['sop-docker-my-app-idle.service']
+        self.assertIn('\nWants=sop-docker-my-app-idle.timer\n', sv)
+        self.assertIn('\nPartOf=sop-docker-my-app.service\n', tm)
+        for line in ('OnActiveSec=60', 'OnUnitActiveSec=60'):
+            self.assertIn(f'\n{line}\n', tm)
+        rd = self.tools / 'docker-sop' / 'my-app'
+        lock = self.home / 'state' / 'my-app' / 'docker.lock'
+        self.assertIn(f'\nType=oneshot\nExecStart={rd}/idle-stop.sh sop-docker-my-app.service {lock} 900\n', isv)
+        for t in (sv, tm, isv):
+            self.assertNotIn('[Install]', t)
+        self.assertIn(' 60\n', self.files(idle=60)['sop-docker-my-app-idle.service'])
+        for bad in (0, -1, '900', 8 * 24 * 3600):
+            with self.assertRaises(S.ServiceError):
+                self.files(idle=bad)
+
+    def test_install_copies_idle_script(self):
+        S.install('my-app', self.root, ctl=FakeCtl())
+        sh = self.tools / 'docker-sop' / 'my-app' / 'idle-stop.sh'
+        self.assertEqual(sh.read_text(), S.IDLE_SH)
+        self.assertEqual(stat.S_IMODE(sh.stat().st_mode), 0o700)
+        for n in os.listdir(self.units):
+            self.assertEqual(stat.S_IMODE((self.units / n).stat().st_mode), 0o600)
+
+    def run_idle(self, lock, idle=900):
+        """用一个假的 systemctl（只记下参数）跑闲了停的脚本，返回它要停的东西（没停就是空的）。"""
+        b = self.tmp / 'bin'
+        b.mkdir(exist_ok=True)
+        (b / 'systemctl').write_text('#!/bin/sh\nprintf "%s " "$@" >> "$(dirname "$0")/stopped"\n')
+        (b / 'systemctl').chmod(0o755)
+        sh = self.tmp / 'idle-stop.sh'
+        sh.write_text(S.IDLE_SH)
+        sh.chmod(0o755)
+        (b / 'stopped').unlink(missing_ok=True)
+        p = subprocess.run([str(sh), 'sop-docker-my-app.service', str(lock), str(idle)], capture_output=True, text=True,
+                           env={**os.environ, 'PATH': f'{b}:/usr/bin:/bin'})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return (b / 'stopped').read_text() if (b / 'stopped').exists() else ''
+
+    def test_idle_script(self):
+        """没有锁文件（没经 sop 用过）不管；有 sop 拿着「在用」锁不停；最后一次用完不到时间不停；够了就停。"""
+        lock = self.tmp / 'docker.lock'
+        self.assertEqual(self.run_idle(lock), '')
+        lock.write_text('')
+        old = lock.stat().st_mtime - 901
+        os.utime(lock, (old, old))
+        import fcntl
+        fd = os.open(lock, os.O_RDONLY)
+        fcntl.flock(fd, fcntl.LOCK_SH)
+        self.assertEqual(self.run_idle(lock), '')                   # 有 sop 在用
+        os.close(fd)
+        self.assertEqual(self.run_idle(lock), '--user stop sop-docker-my-app.service ')
+        os.utime(lock)
+        self.assertEqual(self.run_idle(lock), '')                   # 刚用完
+        os.utime(lock, (old, old))
+        self.assertEqual(self.run_idle(lock, idle=1000), '')        # 闲多久停按参数（901 秒 < 1000 秒）
+
+    def test_use_holds_shared_lock(self):
+        """use()：拿共享的「在用」锁（几个 sop 可以同时用；闲了停的脚本拿不到独占锁就不停），起来，返回通道；
+        release() 放开锁并把修改时间记成最后一次用完；起不来时锁也放开。"""
+        import fcntl
+        from unittest import mock
+        lock = self.home / 'state' / 'my-app' / 'docker.lock'
+        with mock.patch.object(S, 'start', return_value='/x/docker.sock') as st:
+            a = S.use('my-app', self.root, {'memory': '1G'}, 'http://p:1')
+            b = S.use('my-app', self.root)
+        self.assertEqual(a.sock, '/x/docker.sock')
+        self.assertEqual(st.call_args_list[0].args[:4], ('my-app', self.root, {'memory': '1G'}, 'http://p:1'))
+        self.assertEqual(stat.S_IMODE(lock.stat().st_mode), 0o600)
+
+        def free():
+            fd = os.open(lock, os.O_RDONLY)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return True
+            except BlockingIOError:
+                return False
+            finally:
+                os.close(fd)
+        self.assertFalse(free())
+        a.release()
+        self.assertFalse(free())                                   # b 还在用
+        os.utime(lock, (1, 1))
+        b.touch()
+        self.assertGreater(lock.stat().st_mtime, 1)
+        os.utime(lock, (1, 1))
+        b.release()
+        b.release()                                                # 放两次不出错
+        self.assertTrue(free())
+        self.assertGreater(lock.stat().st_mtime, 1)
+        with mock.patch.object(S, 'start', side_effect=S.ServiceError('起不来')):
+            with self.assertRaises(S.ServiceError):
+                S.use('my-app', self.root)
+        self.assertTrue(free())
+
+    def test_limits_from_profile(self):
+        """上限从技术栈档案 toolchain.toml 的 [docker] 段来：只认 memory、cpu。"""
+        self.assertEqual(S.check_limits(None), {})
+        self.assertEqual(S.check_limits({'memory': '2G'}), {'memory': '2G'})
+        for bad in ({'memory': '2G', 'swap': '1G'}, ['2G'], 'yes'):
+            with self.assertRaises(S.ServiceError):
+                S.check_limits(bad)
+
+
+class TestEngineUsesDocker(Base):
+    """sop 在要运行项目代码的地方才起专用 Docker（档案有 [docker] 段时），一个进程只起一次，退出时放开。"""
+
+    def engine(self, toolchain):
+        from kernel.engine import Engine
+
+        class P:
+            name, root = 'my-app', self.root
+
+            def profile(self_):
+                return {'toolchain': toolchain, 'commands': {}} if toolchain is not None else None
+        return Engine(P(), None, None)
+
+    def test_only_when_profile_wants_it(self):
+        from unittest import mock
+        with mock.patch.object(S, 'use') as use:
+            self.assertIsNone(self.engine(None).docker())
+            self.assertIsNone(self.engine({'ro': []}).docker())
+        use.assert_not_called()
+
+    def test_once_per_process_and_released(self):
+        from unittest import mock
+        lease = mock.Mock(sock='/x/docker.sock')
+        e = self.engine({'docker': {'memory': '2G'}})
+        with mock.patch.object(S, 'use', return_value=lease) as use, mock.patch.object(S, 'proxy', return_value=''):
+            self.assertEqual(e.docker(), '/x/docker.sock')
+            self.assertEqual(e.docker(), '/x/docker.sock')
+        use.assert_called_once_with('my-app', self.root, {'memory': '2G'}, '')
+        lease.touch.assert_called_once()
+        e.release_docker()
+        e.release_docker()
+        lease.release.assert_called_once()
+        with self.assertRaises(S.ServiceError):
+            self.engine({'docker': {'swap': '1G'}}).docker()
+
+    def test_wired_into_steps(self):
+        """装依赖、门禁、工单上的实现给通道；规划、只看不改的 AI 步骤不给；run() 收尾时放开。"""
+        from kernel import steps
+        self.assertEqual(steps.DOCKER_KINDS, ('ticket_impl', 'implement_spec'))
+        src = (REPO / 'kernel' / 'steps.py').read_text()
+        self.assertEqual(src.count('docker_sock=eng.docker(prof)'), 2)
+        self.assertIn('docker_sock=eng.docker() if kind in DOCKER_KINDS else None', src)
+        self.assertIn('self.release_docker()', (REPO / 'kernel' / 'engine.py').read_text())

@@ -32,7 +32,7 @@ echo "  通道 $sock（$(( ($(date +%s%N) - t0) / 1000000 )) 毫秒，退出码 
 must "[ $rc = 0 ] && [ -S \"$sock\" ]" "起来了、通道在"
 echo "  --- $UNITS/$SV ---"; sed 's/^/    /' $UNITS/$SV
 echo "  --- $UNITS/$SL ---"; sed 's/^/    /' "$UNITS/$SL"
-must "[ \"\$(stat -c %a $UNITS/$SV)\" = 600 ] && [ \"\$(stat -c %a '$UNITS/$SL')\" = 600 ]" "两份登记文件只有自己能读"
+must "[ \"\$(stat -c %a $UNITS/$SV)\" = 600 ] && [ \"\$(stat -c %a '$UNITS/$SL')\" = 600 ]" "服务和分组的登记文件只有自己能读"
 must "[ \"\$(systemctl --user show -p Slice --value $SV)\" = '$SL' ]" "服务在分组 $SL 里"
 must "[ \"\$(systemctl --user show -p MemoryMax --value '$SL')\" = 314572800 ]" "分组的内存上限 300M 生效"
 must "[ \"\$(systemctl --user show -p CPUQuotaPerSecUSec --value '$SL')\" = 1s ]" "分组的处理器上限 1 核生效"
@@ -118,7 +118,7 @@ must "! echo \"\$out\" | grep -q -e 秘密 -e '^/host$HOME/tools/sop' -e '^/host
 step "停掉、删掉登记文件：数据还在"
 py -m runner.docker.service remove $P
 must "! systemctl --user -q is-active $SV" "服务停了"
-must "[ ! -e $UNITS/$SV ] && [ ! -e '$UNITS/$SL' ]" "两份登记文件删了"
+must "[ ! -e $UNITS/$SV ] && [ ! -e '$UNITS/$SL' ] && [ ! -e $UNITS/sop-docker-$P-idle.timer ] && [ ! -e $UNITS/sop-docker-$P-idle.service ]" "四份登记文件删了（3-18 加了闲了停的计时器和它的服务）"
 must "[ -d ~/tools/docker-sop/$P/data ] && [ \$(du -sm ~/tools/docker-sop/$P/data | cut -f1) -gt 50 ]" "数据目录还在（$(du -sh ~/tools/docker-sop/$P/data | cut -f1)，有拉下来的镜像）"
 sock=$(py -m runner.docker.service start $P "$R" --memory 300M --cpu 100%)
 must "D image inspect debian:stable-slim >/dev/null 2>&1" "再起来，镜像还在"
@@ -129,7 +129,7 @@ step "隔离自检专用 Docker 那份（用正式服务起）"
 py runner/docker/selftest_docker.py > /tmp/sdk.log 2>&1; rc=$?
 sed 's/^/  /' /tmp/sdk.log
 must "[ $rc = 0 ] && grep -qx '专用 Docker 的隔离自检：13 项，0 项不符合' /tmp/sdk.log" "13 项全过"
-must "[ ! -e $UNITS/sop-docker-sopdk.service ] && [ ! -e $UNITS/sop-sopdk.slice ] && ! systemctl --user -q is-active sop-docker-sopdk.service" "跑完服务停了、登记文件删了"
+must "[ ! -e $UNITS/sop-docker-sopdk.service ] && [ ! -e $UNITS/sop-sopdk.slice ] && [ ! -e $UNITS/sop-docker-sopdk-idle.timer ] && ! systemctl --user -q is-active sop-docker-sopdk.service" "跑完服务停了、登记文件删了"
 must "[ ! -e ~/tools/sop/state/sopdk ] && ! ls -d /tmp/sop-selftest-docker-* >/dev/null 2>&1" "state/sopdk、/tmp 的假项目都删了"
 
 step "M6（两份合起来，通过后记登记）"

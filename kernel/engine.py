@@ -52,6 +52,8 @@ class Engine:
         self.counts = {}
         self.outlock = threading.Lock()
         self.poll = float(os.environ.get('SOP_POLL_SECONDS', '15'))
+        self.dlock = threading.Lock()
+        self.lease = None             # 这个 sop 进程在用的专用 Docker（3-18），退出时放开
         from . import steps
         self.steps = steps
 
@@ -62,6 +64,29 @@ class Engine:
 
     def ev(self, scope, step, type_, **kw):
         return self.p.journal.append(J.event(scope, step, type_, **kw))
+
+    def docker(self, prof=None):
+        """专用 Docker（6.3 二，3-18 用时才起）：项目的技术栈档案要用 Docker（toolchain.toml 里有 [docker] 段）时，
+        起好这个项目的专用 Docker、等它答话，返回通道；档案不用 Docker（或还没选档案）返回 None。
+        一个 sop 进程里只起一次，拿着「在用」锁一直到退出（run() 收尾时放开）；退出后 15 分钟没有 sop 再用就由计时器停掉。
+        上限取 [docker] 段的 memory、cpu（都可省，省了用默认：内存一半、一半的核）。档案在工具包里，受限侧改不了。"""
+        prof = prof if prof is not None else self.p.profile()
+        if not prof or 'docker' not in prof['toolchain']:
+            return None
+        with self.dlock:
+            if self.lease is None:
+                from runner.docker import service
+                limits = service.check_limits(prof['toolchain']['docker'])
+                self.lease = service.use(self.p.name, self.p.root, limits, service.proxy())
+            else:
+                self.lease.touch()
+            return self.lease.sock
+
+    def release_docker(self):
+        with self.dlock:
+            if self.lease is not None:
+                self.lease.release()
+                self.lease = None
 
     def events(self, feature):
         return self.p.journal.read(['project', f'feature/{feature.name}'], fetch=False)
@@ -82,6 +107,7 @@ class Engine:
         except Stop:
             return self.report('stopped' if self.problems else 'waiting')
         finally:
+            self.release_docker()
             self.p.journal.close()
             lock.release()
 

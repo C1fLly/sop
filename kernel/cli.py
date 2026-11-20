@@ -133,6 +133,9 @@ def main(argv):
         if argv[:2] == ['project', 'new']:      # 不在项目里也能用（7.2）
             from . import projectnew
             return projectnew.cli(argv[2:])
+        if argv[:2] == ['project', 'clone']:    # 换了电脑、继续旧项目（4.6、4.7）
+            from . import projectclone
+            return projectclone.cli(argv[2:])
         p = Project(find_root(os.getcwd()))
         if not argv:
             return run_engine(p)

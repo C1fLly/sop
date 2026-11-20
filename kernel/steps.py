@@ -26,6 +26,8 @@ NAMES = {'fast': 'fast', 'full': 'full', 'guard': 'guard'}
 RESULT_KIND = {'ticket_impl': 'impl', 'planning': 'planning', 'std_draft': 'planning', 'readonly': 'review'}
 # 会运行项目代码的 AI 步骤（工单上的实现要跑测试，测试可能起容器）才给专用 Docker 的通道（6.3 四）；规划、只看不改的步骤不给
 DOCKER_KINDS = ('ticket_impl', 'implement_spec')
+# 会运行项目代码、要先装好依赖的步骤（3-58）：门禁（T5、F15）和工单上的实现（T3、T6、T7、T14）。复查、规划不跑项目代码，不用装
+DEPS_KINDS = ('restricted_script', 'ticket_impl')
 
 
 def R(*a, **kw):
@@ -165,6 +167,10 @@ def before(eng, f, sc, step, attempt):
 
 
 def dispatch(eng, f, sc, step, attempt, pos):
+    if step.get('kind') in DEPS_KINDS:
+        bad = ensure_deps(eng, f, sc, step['id'], worktree_of(eng, f, sc, step))
+        if bad:
+            return bad
     a = step['actor']
     if a in ('ai_headless', 'ai_interactive'):
         return ai_step(eng, f, sc, step, attempt, pos)
@@ -598,6 +604,45 @@ def h_accept_feature(eng, f, sc, step, attempt, pos):
 
 
 # ======================================================================
+# 装依赖（5.6、7.2 末尾；3-58）
+# ======================================================================
+def ensure_deps(eng, f, sc, sid, wt):
+    """这台电脑上这个工作目录还没装过依赖，就按档案的 setup 在受限侧装（不交给 wt 的准备脚本，5.6），装好留记号。
+    T1 开工单目录时装；换了电脑重建的目录（sop project clone，T1 在别的电脑上做完了）、功能目录（F15 在那里跑门禁），
+    在第一个要运行项目代码的步骤开始前补装。记号在 state/<项目名>/deps/ 下（项目根外面），记着目录的设备号和 inode、
+    档案名和 setup 命令：目录删了重建、档案换了 setup，都对不上，重装。装不好返回一个「停在这一步」的结果，装好了返回 None。"""
+    p = eng.p
+    prof = p.profile()
+    if not prof or not prof['commands'].get('setup'):
+        return None
+    d = p.root / wt
+    if not d.is_dir():
+        return None                    # 目录不在：交给这一步自己去报
+    st = d.stat()
+    want = {'worktree': wt, 'dev': st.st_dev, 'ino': st.st_ino, 'profile': prof['name'], 'setup': prof['commands']['setup']}
+    mark = p.deps_mark(wt)
+    try:
+        had = json.loads(mark.read_text())
+    except (OSError, ValueError):
+        had = None
+    if isinstance(had, dict) and {k: had.get(k) for k in want} == want:
+        return None
+    ctx = placement.Ctx(root=p.root, kind='restricted_script', worktree=wt, feature=f.name,
+                        ro=[x for x in (p.expand(y, prof) for y in prof['toolchain'].get('ro', [])) if x],
+                        docker_sock=eng.docker(prof))
+    r = sandbox.run(ctx, [p.expand(x, prof) for x in prof['commands']['setup']], timeout=3600)
+    if r.returncode:
+        return R(False, f'装依赖失败：{(r.stdout + r.stderr)[-300:]}', hold=True)
+    mark.parent.mkdir(parents=True, exist_ok=True)
+    tmp = mark.with_name(mark.name + '.tmp')
+    tmp.write_text(json.dumps({**want, 'at': time.strftime('%Y-%m-%dT%H:%M:%S'), 'step': f'{sc.scope}:{sid}'}, ensure_ascii=False))
+    os.replace(tmp, mark)
+    if sid != 'T1':
+        eng.did.append((sc.scope, sid, '装依赖', f'这台电脑上 {wt} 还没装过依赖，先在受限侧装好了'))
+    return None
+
+
+# ======================================================================
 # 工单流程
 # ======================================================================
 def t_open(eng, f, t, step, attempt, pos):
@@ -606,14 +651,9 @@ def t_open(eng, f, t, step, attempt, pos):
     if not (p.root / t.wt).is_dir():
         p.wt_new(t.branch, f'origin/{f.branch}')
     pr = ports.allocate(p.name, t.wt)
-    prof = p.profile()
-    if prof and prof['commands'].get('setup'):   # 依赖由流程命令在受限侧装，不交给 wt 的准备脚本（5.6）
-        ctx = placement.Ctx(root=p.root, kind='restricted_script', worktree=t.wt, feature=f.name,
-                            ro=[x for x in (p.expand(y, prof) for y in prof['toolchain'].get('ro', [])) if x],
-                            docker_sock=eng.docker(prof))
-        r = sandbox.run(ctx, [p.expand(x, prof) for x in prof['commands']['setup']], timeout=3600)
-        if r.returncode:
-            return R(False, f'装依赖失败：{(r.stdout + r.stderr)[-300:]}', hold=True)
+    bad = ensure_deps(eng, f, t, 'T1', t.wt)
+    if bad:
+        return bad
     base = p.wgit(t.wt)('rev-parse', 'HEAD')
     p.journal.append(J.event(t.scope, 'T1', 'register', what='worktree', branch=t.branch, base=f.branch, worktree=t.wt, base_commit=base))
     return R(True, payload={'ports': pr, 'base': base})

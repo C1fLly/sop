@@ -1,4 +1,4 @@
 # 统一命令表（11.3）。全部在受限侧运行。
-setup = ["true"]
+setup = ["python3", "{profile}/setup.py"]
 gate-fast = ["python3", "{profile}/gate.py", "fast"]
 gate-full = ["python3", "{profile}/gate.py", "full"]

@@ -7,6 +7,9 @@
   比：项目根同一个位置（<项目目录>/demo）、工作目录一个不多一个不少、每个目录的分支和提交、wt 登记的基准和 PR 号、
   .shared/hooks 和工具包模板一字不差；还没开 PR 的工单 02 的基准是按事件日志写回的；工具包版本装好了；
   .shared/.env 按仓库里的清单重新生成。最后在 B 上接着做，把这个功能做完。
+- 依赖（3-58）：档案 fake 的 setup 每装一次在目录里记一行，门禁把行数写进报告。A 上 T1 装一次、后面不再装；克隆本身不装；
+  B 上重建的目录在第一个要运行项目代码的步骤之前补装一次（01 验收不通过去修复、04 实现重来），B 上新开的 03 由 T1 装，
+  功能目录在 F15 之前装，门禁看到的都是「装过一次」；目录删了，记号也删了。
 
 防止调到真的 gh：PATH 里假的在最前面；两台电脑的主目录、GH_CONFIG_DIR 都是空的临时目录；开头先确认 PATH 里找到的 gh 就是假的那个。
 不连网：仓库地址都是本机路径。"""
@@ -116,6 +119,19 @@ class TestProjectClone(SandboxCase):
         self.assertTrue(self.w.rgit('rev-parse', '--verify', '--quiet', f'refs/heads/{T2}'))
         self.assertEqual(self.w.rgit('rev-parse', '--verify', '--quiet', f'refs/heads/{T4}', check=False), '')
 
+    @staticmethod
+    def installs(wt_dir):
+        """这个目录在这台电脑上装过几次依赖（档案 fake 的 setup 记的行数）。"""
+        log = pathlib.Path(wt_dir) / '.fake-deps' / 'installed.log'
+        return len(log.read_text().splitlines()) if log.exists() else 0
+
+    @staticmethod
+    def gate_saw(state, scope, step):
+        """这台电脑上这个范围每次门禁开始时，目录里已经装过几次依赖（门禁报告里的 deps_installs）。"""
+        d = pathlib.Path(state) / 'runs' / scope.replace('/', '_')
+        reps = sorted(d.glob(f'{step}-*/out/report.json'), key=lambda x: int(x.parent.parent.name.split('-')[-1]))
+        return [json.loads(x.read_text())['deps_installs'] for x in reps]
+
     def snapshot(self, root):
         """一台电脑上项目的样子：工作目录、各自的分支和提交、wt 登记的基准和 PR 号、.shared/hooks。"""
         g = lambda *a: sh('git', '--git-dir', root / '.git', *a, check=False)     # noqa: E731
@@ -136,6 +152,14 @@ class TestProjectClone(SandboxCase):
         self.assertEqual(sorted(a['worktrees']), ['feat-jz-1', 'main', 'ticket-jz-1-01', 'ticket-jz-1-02', 'ticket-jz-1-04'])
         journal = self.w.journal_tip()
         db_before = self.w.db()
+        # 依赖（3-58）：A 上 T1 开工单目录时装了一次，后面的实现、门禁没再装；功能目录还没走到 F15，没装
+        sa = self.w.home / 'state' / 'demo'
+        for n in ('01', '02', '04'):
+            self.assertEqual(self.installs(self.w.root / f'ticket-jz-1-{n}'), 1, n)
+            self.assertTrue((sa / 'deps' / f'ticket-jz-1-{n}.json').exists(), n)
+        self.assertEqual(self.installs(self.w.root / 'feat-jz-1'), 0)
+        for sc in (T1, T2):
+            self.assertEqual(self.gate_saw(sa, sc, 'T5'), [1], sc)
 
         r = self.kernel_b('project', 'clone', 'tester/demo')
         if os.environ.get('SOP_SHOW'):
@@ -177,6 +201,11 @@ class TestProjectClone(SandboxCase):
         self.assertEqual(os.listdir(self.b / 'ghcfg'), [])
         self.assertEqual(os.listdir(self.b / 'tmpdir'), [])
         self.assertEqual(os.listdir(self.b / 'home'), ['.gitconfig'])
+        # 克隆本身不装依赖（特权侧不运行项目代码；依赖由流程命令随后在受限侧装，7.2 末尾）
+        sb = self.b / 'sop-home' / 'state' / 'demo'
+        for wt in b['worktrees']:
+            self.assertEqual(self.installs(self.root_b / wt), 0, wt)
+        self.assertFalse((sb / 'deps').exists())
 
         # 再执行一次：接着做的样子，什么都不变
         r2 = self.kernel_b('project', 'clone', 'tester/demo')
@@ -189,12 +218,24 @@ class TestProjectClone(SandboxCase):
         with mock_env({'SOP_HOME': str(self.b / 'sop-home')}):
             components.record()          # B 的隔离自检通过过（机器准备时）
         self.w.human['*:T11'] = [{'answer': '通过'}] * 10
+        self.w.human[f'{T1}:T11'] = [{'answer': '不通过', 'note': '金额显示少了一位'}, {'answer': '通过'}]   # 01 去修复：重建的目录要运行代码了
+        self.w.script[f'{T1}:T6:1'] = {'files': {'src/t01.py': '# 工单 01 金额显示两位小数\n'}, 'commit': 'fix: 01 金额显示'}
         self.w.save_scripts()
         r3 = self.kernel_b(cwd=self.root_b, toolkit=d)
+        if os.environ.get('SOP_SHOW'):
+            print(r3.stdout[-6000:], r3.stderr[-3000:])
         self.assertEqual(r3.returncode, 0, r3.stdout[-4000:] + r3.stderr[-2000:])
         self.assertFeatureDone(r3)
         for sc in (T1, T2, T3, T4):
             self.assertIn(('T15', 'done'), self.steps(sc), sc)
+        self.assertIn(('T6', 'done'), self.steps(T1))
+        # 依赖（3-58）：B 上每次门禁开始时，目录在 B 上都正好装过一次（重建的 01、04 补装了，新开的 03 由 T1 装，功能目录在 F15 之前装）
+        for sc in (T1, T3, T4):
+            self.assertEqual(self.gate_saw(sb, sc, 'T5'), [1], sc)
+        self.assertEqual(self.gate_saw(sb, FS, 'F15'), [1])
+        self.assertEqual(self.gate_saw(sb, T2, 'T5'), [])     # 02 在 B 上只剩复查、开 PR、验收、合并，不运行项目代码，用不着装
+        self.assertIn('F15 装依赖：这台电脑上 feat-jz-1 还没装过依赖，先在受限侧装好了', r3.stdout)   # 停下时的报告只列最后 40 条
+        self.assertEqual(sorted(os.listdir(sb / 'deps')), [])  # 目录都删了，记号也都删了
 
     def test_nothing_in_progress_no_manifest(self):
         """没有进行中的功能、仓库里没有开发环境清单：只建 main 目录，不生成 .shared/.env。"""

@@ -19,7 +19,9 @@ for f in sorted(os.listdir('ui/screens')) if os.path.isdir('ui/screens') else []
     h = lambda p: hashlib.sha1(open(p, 'rb').read()).hexdigest()   # noqa: E731
     if not os.path.exists(base) or h(base) != h(os.path.join('ui/screens', f)):
         ui.append(f'docs/baseline/{f}')
-rep = {'level': level, 'pass': rule.get('pass', True), 'tests': rule.get('tests', 3), 'ui_changes': ui,
+# 这个目录在这台电脑上装过几次依赖（setup.py 每装一次记一行；3-58 的沙箱拿它核对「装过、没重复装」）
+deps = sum(1 for _ in open('.fake-deps/installed.log')) if os.path.exists('.fake-deps/installed.log') else 0
+rep = {'level': level, 'pass': rule.get('pass', True), 'tests': rule.get('tests', 3), 'ui_changes': ui, 'deps_installs': deps,
        'why': rule.get('why', '' if rule.get('pass', True) else '测试不通过（剧本）')}
 json.dump(rep, open('/sop/out/report.json', 'w'), ensure_ascii=False)
 print(json.dumps(rep, ensure_ascii=False))

@@ -79,9 +79,15 @@ class Project:
             return wtx.new(self.name, self.root, branch, start, slug=self.slug())
 
     def wt_remove(self, branch, done=True):
-        """删目录：done=True 用 wt done，False 用 wt rm。"""
+        """删目录：done=True 用 wt done，False 用 wt rm。目录没了，这台电脑上「装过依赖」的记号也一起删。"""
         with self.gitlock:
-            return wtx.remove(self.name, self.root, branch, done=done, slug=self.slug())
+            r = wtx.remove(self.name, self.root, branch, done=done, slug=self.slug())
+        self.deps_mark(wtx.dirname(branch)).unlink(missing_ok=True)
+        return r
+
+    def deps_mark(self, wt):
+        """这台电脑上这个工作目录装过依赖的记号（3-58）。放在项目根外面的 state/<项目名>/ 下，受限侧碰不到（6.2 第 2 条）。"""
+        return self.state / 'deps' / f'{wt}.json'
 
     def wt_set_base(self, branch, target):
         """登记基准（写回 wt 的登记）。"""

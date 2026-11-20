@@ -28,6 +28,11 @@ def versions_dir() -> pathlib.Path:
     return sop_home() / 'versions'
 
 
+def projects_dir() -> pathlib.Path:
+    """项目都放在这里（4.3：~/Project/<项目名>）。自测用 SOP_PROJECTS_DIR 换掉，不碰真的 ~/Project。"""
+    return pathlib.Path(os.environ.get('SOP_PROJECTS_DIR') or '~/Project').expanduser()
+
+
 def check_project_name(name: str) -> str:
     if not PROJECT_NAME.match(name):
         raise ValueError(f'项目名只能用小写字母、数字和「-」：{name!r}')

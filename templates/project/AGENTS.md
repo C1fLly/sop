@@ -7,3 +7,17 @@
   docs/agents/、docs/standards/、docs/baseline/，以及档案声明的规范配置文件。
 - 不要修改已有的测试来让测试通过。
 - 拿不准的时候不要猜：把问题写进结果文件，标明是业务问题还是技术问题。
+
+## Agent skills
+
+### Issue tracker
+
+工单和规格是 `.scratch/` 下的本地 markdown 文件。See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+用默认的五个标签：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+single-context：根目录一个 `GLOSSARY.md`，决策记录在 `docs/adr/`。See `docs/agents/domain.md`.

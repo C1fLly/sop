@@ -130,6 +130,9 @@ def main(argv):
         if argv[:1] == ['machine']:
             from machine.cli import main as machine_main
             return machine_main(argv[1:])
+        if argv[:2] == ['project', 'new']:      # 不在项目里也能用（7.2）
+            from . import projectnew
+            return projectnew.cli(argv[2:])
         p = Project(find_root(os.getcwd()))
         if not argv:
             return run_engine(p)

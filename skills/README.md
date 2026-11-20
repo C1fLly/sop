@@ -16,4 +16,4 @@ git clone --no-checkout https://github.com/mattpocock/skills.git /tmp/<空目录
 git -C /tmp/<空目录>/src rev-parse 5863806:skills   # 应为 76953a7e724d1df247c12f465319563bb022f2fe
 ```
 
-许可的要求（MIT）：复制全部或大部分内容时，要带上版权声明和许可声明，也就是 `mattpocock/LICENSE` 这个文件。工具包仓库里带着它；把技能复制进项目（I4）时也要把它一起带过去（不能放进技能目录里）。
+许可的要求（MIT）：复制全部或大部分内容时，要带上版权声明和许可声明，也就是 `mattpocock/LICENSE` 这个文件。工具包仓库里带着它；把技能复制进项目（I4，`kernel/projectnew.py`）时也把它原样带过去，放在技能目录之外：`.claude/LICENSE-mattpocock-skills`、`.agents/LICENSE-mattpocock-skills`。

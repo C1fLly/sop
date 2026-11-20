@@ -1,7 +1,13 @@
 """专用 Docker 的正式后台服务和分组（设计书 6.3 二，任务 3-17）。
 
-每个项目一个用户级后台服务 sop-docker-<项目名>.service，放进这个项目自己的分组（slice），内存、处理器的上限设在分组上：
+每个项目一个用户级后台服务 sop-docker-<项目名>.service，放进这个项目自己的分组（slice），处理器的上限设在分组上：
 换了根的专用 Docker 连不上服务管理器，给单个容器设的上限不生效；分组上的上限管得住它起的所有容器（第一段实测）。
+- 内存上限只管容器（3-55）：服务分组下分两个小组，专用 Docker 自己的进程在 daemon/（DelegateSubgroup=daemon），
+  容器都在 ctr/（换根脚本建、把项目的内存上限写在它上面，runc 外壳建容器时把容器放进去）。
+  不这样的话容器和专用 Docker 共用一个上限：内核杀了吃内存的容器后，containerd-shim、dockerd 收尾要的那点内存又触发一次超限，
+  被杀的内存还没还回来，内核接着再杀一个，常常是同项目别的容器（3-54 记录）。分开以后它们要内存记在 daemon/ 上，不会再顺带杀容器。
+  每个容器还设成「超内存时整个容器一起杀」（memory.oom.group），免得吃内存的容器里剩下的进程又触发一次。
+  项目的分组（slice）上只留一道兜底：容器的上限再加 DAEMON_ROOM（专用 Docker 自己平常约 180 MB），防专用 Docker 自己失控。
 
 - 分组的名字：sop-<项目名>.slice，项目名里的「-」写成 \\x2d。服务管理器把分组名里的「-」当成上下级：
   不转写的话 sop-my-app.slice 会落在 sop-my.slice 下面，项目 my 的上限就把项目 my-app 也算进去了。
@@ -56,6 +62,8 @@ LONGEST_SOCK = '/exec/containerd/containerd.sock.ttrpc'      # 专用 Docker 自
 WAIT = 60
 IDLE = 15 * 60                                              # sop 退出后多久没再用就停（问题 3，用户 2026-11-19 定）
 CHECK = 60                                                  # 闲了停的计时器多久看一次
+DAEMON_ROOM = 512 * 1024 ** 2                               # 项目分组的兜底上限比容器的上限多留这么多，给专用 Docker 自己（3-55）
+UNIT = {'': 1, 'K': 1024, 'M': 1024 ** 2, 'G': 1024 ** 3, 'T': 1024 ** 4}
 # 闲了停（3-18）：由计时器每分钟跑一次。参数：服务名、「在用」锁文件、闲多少秒停。
 # 没有锁文件（从没经 use() 用过，例如隔离自检、虚拟机里手动 start）就不管；拿不到独占锁就是有 sop 在用，什么都不做；
 # 拿到了看锁文件的修改时间（sop 最后一次用完的时间），够久了就停，停完才放开锁（这时 sop 要用就等它停完再起）。
@@ -143,6 +151,19 @@ def check_limits(limits):
     return dict(limits)
 
 
+def memory_bytes(v):
+    """项目的内存上限换成字节数（和服务管理器一样：K、M、G、T 按 1024 算，百分数按这台电脑的物理内存算）；infinity 是 None。"""
+    if v == 'infinity':
+        return None
+    if v.endswith('%'):
+        n = os.sysconf('SC_PHYS_PAGES') * os.sysconf('SC_PAGE_SIZE') * int(v[:-1]) // 100
+    else:
+        n = int(v.rstrip('KMGT')) * UNIT[v[-1] if v[-1] in 'KMGT' else '']
+    if n <= 0:
+        raise ServiceError(f'内存上限不能是 0：{v}')
+    return n
+
+
 def render(project, root, limits=None, proxy='', idle=IDLE):
     """生成四份登记文件的内容（服务、分组、闲了停的计时器和它触发的服务），返回 {文件名: 内容}。只生成、不写。"""
     lim = {**default_limits(), **check_limits(limits)}
@@ -150,6 +171,7 @@ def render(project, root, limits=None, proxy='', idle=IDLE):
         raise ServiceError(f'内存上限的写法不对：{lim["memory"]}（要像 300M、2G、50%）')
     if not CPU.fullmatch(str(lim['cpu'])):
         raise ServiceError(f'处理器上限的写法不对：{lim["cpu"]}（要像 100%，100% 是 1 核）')
+    mem = memory_bytes(str(lim['memory']))
     sv, sl = service_name(project), slice_name(project)
     it, isv = idle_name(project, '.timer'), idle_name(project, '.service')
     rd, b = data_dir(project), docker_bin()
@@ -165,16 +187,18 @@ def render(project, root, limits=None, proxy='', idle=IDLE):
         raise ServiceError(f'项目名 {project} 太长：专用 Docker 的通道路径会超过系统允许的 {SOCK_MAX} 个字符，起不来。换一个短一点的项目名')
     env = [_env_quote('HOME', HOME), _env_quote('PATH', f'{BIN}:/usr/bin:/usr/sbin'),
            _env_quote('XDG_RUNTIME_DIR', f'{RD}/run'), _env_quote('DOCKERD', f'{RD}/dockerd-wrap.py'),
-           _env_quote('SOPD_RD', RD), _env_quote('SOPD_PROJ', PROJ), _env_quote('SOPD_BIN', BIN)]
+           _env_quote('SOPD_RD', RD), _env_quote('SOPD_PROJ', PROJ), _env_quote('SOPD_BIN', BIN),
+           _env_quote('SOPD_MEM', 'max' if mem is None else str(mem))]
     if proxy:
         env += [_env_quote(k, proxy) for k in ('HTTP_PROXY', 'HTTPS_PROXY')] + [_env_quote('NO_PROXY', 'localhost,127.0.0.1')]
     slice_text = '\n'.join([
         '# 工具包生成的（sop，设计书 6.3 二），不要手改：下次起专用 Docker 时会按工具包的重写。',
+        f'# 内存：容器合起来 {lim["memory"]}（换根脚本写在服务分组下的 ctr/ 上），这里是兜底：再多留 {DAEMON_ROOM >> 20}M 给专用 Docker 自己。',
         '[Unit]',
         f'Description=SOP 项目 {project} 的资源上限（它的专用 Docker 起的所有容器一起算）',
         '',
         '[Slice]',
-        f'MemoryMax={lim["memory"]}',
+        f'MemoryMax={"infinity" if mem is None else mem + DAEMON_ROOM}',
         'MemorySwapMax=0',
         f'CPUQuota={lim["cpu"]}',
         '']) + '\n'
@@ -191,6 +215,7 @@ def render(project, root, limits=None, proxy='', idle=IDLE):
         f'ExecStart={BIN}/dockerd-rootless.sh --data-root {RD}/data --exec-root {RD}/exec '
         f'--host unix://{RD}/run/docker.sock --pidfile {RD}/run/docker.pid',
         'Delegate=yes',
+        'DelegateSubgroup=daemon',
         'KillMode=mixed',
         'Restart=on-failure',
         'OOMScoreAdjust=100',
@@ -280,7 +305,7 @@ def ready(project):
 
 def start(project, root, limits=None, proxy='', ctl=systemctl, wait=WAIT, idle=IDLE):
     """装好（有变化才重写）、没在跑就起（闲了停的计时器跟着起）、等就绪，返回通道路径。
-    已经在跑就直接用（分组的上限改了当场生效；服务本身的登记改了下次起来才生效）。"""
+    已经在跑就直接用（处理器上限、内存的兜底改了当场生效；容器的内存上限和服务本身的登记改了下次起来才生效）。"""
     install(project, root, limits, proxy, ctl, idle)
     sv = service_name(project)
     if not is_active(project, ctl):

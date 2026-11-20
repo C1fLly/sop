@@ -81,7 +81,7 @@ EOF
     sl=$(systemctl --user show -p Slice --value $(SV $p))
     echo "  $p 的分组 $sl，内存上限 $(systemctl --user show -p MemoryMax --value "$sl")"
   done
-  must "[ \"\$(systemctl --user show -p MemoryMax --value 'sop-app.slice')\" = 314572800 ] && [ \"\$(systemctl --user show -p MemoryMax --value 'sop-app\\x2didle.slice')\" = 419430400 ]" "两个分组各是各的上限（300M、400M），app-idle 的分组没挂到 app 下面"
+  must "[ \"\$(systemctl --user show -p MemoryMax --value 'sop-app.slice')\" = 851443712 ] && [ \"\$(systemctl --user show -p MemoryMax --value 'sop-app\\x2didle.slice')\" = 956301312 ]" "两个分组各是各的上限（容器 300M、400M，再各加 512M 给专用 Docker 自己，3-55），app-idle 的分组没挂到 app 下面"
 
   step "两个专用 Docker 里起同名的容器 web、同名的数据卷 data、同名的网络 net，各自映射自己分到的端口"
   for p in $A $B; do
@@ -132,7 +132,7 @@ EOF
   must "[ \"$ev\" -ge 3 ]" "$A 的分组按自己的上限杀了"
   must "[ \"\$(mainpid $B)\" = $mb ] && [ \"\$(D $B inspect -f '{{.State.Running}}' web)\" = true ] && [ \"\$(get $PB)\" = 我是$B ]" "$B 的专用 Docker 没换、web 还在跑、还在答话"
   must "[ \"\$(mainpid $A)\" = $ma ]" "$A 的专用 Docker 自己也没事（3-54）"
-  echo "  （$A 的 web 跟着停没停不在这次范围，见 3-55：$(D $A inspect -f '{{.State.Status}}' web)）"
+  must "[ \"\$(D $A inspect -f '{{.State.Running}}' web)\" = true ] && [ \"\$(get $PA)\" = 我是$A ]" "$A 自己的 web 也没跟着停、还在答话（3-55）"
   [ "$(get $PA)" = 我是$A ] || { D $A start web >/dev/null; sleep 1; }
 
   step "$A 用完放开、$B 还在用：$A 过了闲的时间停了，$B 照常"

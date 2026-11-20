@@ -4,7 +4,8 @@
 #   虚拟机要先 vm.sh new <名字> 建好。把工作区的代码打包拷进去（~/sop-src），在里面跑 dockersvc-guest.sh：
 #   先装 bubblewrap 和规定位置的免管理员 Docker（M2），再验：服务和分组的样子、容器落在分组里、超内存容器被杀而专用 Docker 还在、
 #   处理器上限生效、视野只读、隔离自检专用 Docker 那份 13 项（用正式服务起）、M6 两份合起来。
-#   超内存那一步（3-54）连演 OOM_N 次（默认 24）：专用 Docker 一次都不被杀；同项目另一个容器停没停也记下（3-55）。
+#   超内存那一步（3-54）连演 OOM_N 次（默认 60）：专用 Docker 一次都不被杀；同项目另一个容器一次都不停（3-55：容器单独在 ctr/ 小组里，
+#   上限只管容器）。
 # 虚拟机里的 sudo 代表「小白输管理员密码」（用户 2026-11-19 答应第三段可以在虚拟机里用 sudo、装 Docker、起停专用 Docker）。
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd); REPO=$(cd "$HERE/../.." && pwd); VM=$HERE/vm.sh

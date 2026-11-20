@@ -66,17 +66,33 @@ class TestNames(Base):
 
 class TestRender(Base):
     def test_slice_carries_limits(self):
-        """内存、处理器的上限设在分组上；不用交换区（超了就被杀，不是慢慢换出去）。"""
+        """处理器的上限设在分组上；内存（3-55）：容器合起来的上限用 SOPD_MEM（字节数）交给换根脚本写在 ctr/ 上，
+        分组上是兜底（再多留 512M 给专用 Docker 自己）；不用交换区（超了就被杀，不是慢慢换出去）。"""
         f = self.files(limits={'memory': '300M', 'cpu': '100%'})
         sl = f['sop-my\\x2dapp.slice']
-        self.assertIn('[Slice]\nMemoryMax=300M\nMemorySwapMax=0\nCPUQuota=100%\n', sl)
+        self.assertIn(f'[Slice]\nMemoryMax={(300 + 512) * 1024 ** 2}\nMemorySwapMax=0\nCPUQuota=100%\n', sl)
         self.assertIn('my-app', sl)
+        self.assertIn(f'Environment="SOPD_MEM={300 * 1024 ** 2}"\n', f['sop-docker-my-app.service'])
+        f = self.files(limits={'memory': 'infinity'})
+        self.assertIn('\nMemoryMax=infinity\n', f['sop-my\\x2dapp.slice'])
+        self.assertIn('Environment="SOPD_MEM=max"\n', f['sop-docker-my-app.service'])
+
+    def test_memory_bytes(self):
+        """上限换成字节数：和服务管理器一样按 1024 算；百分数按物理内存算；0 不行。"""
+        self.assertEqual(S.memory_bytes('300M'), 300 * 1024 ** 2)
+        self.assertEqual(S.memory_bytes('2G'), 2 * 1024 ** 3)
+        self.assertEqual(S.memory_bytes('4096'), 4096)
+        self.assertEqual(S.memory_bytes('100%'), os.sysconf('SC_PHYS_PAGES') * os.sysconf('SC_PAGE_SIZE'))
+        self.assertIsNone(S.memory_bytes('infinity'))
+        for bad in ('0', '0M', '0%'):
+            with self.assertRaises(S.ServiceError):
+                self.files(limits={'memory': bad})
 
     def test_service_in_slice_not_autostart(self):
         """服务放进分组；交给它自己管下面的分组（Delegate），停的时候先停主程序；不设成登录后自己起来（用时才起，用户定的）。"""
         sv = self.files()['sop-docker-my-app.service']
         self.assertIn('\nSlice=sop-my\\x2dapp.slice\n', sv)
-        for line in ('Delegate=yes', 'KillMode=mixed', 'Restart=on-failure'):
+        for line in ('Delegate=yes', 'DelegateSubgroup=daemon', 'KillMode=mixed', 'Restart=on-failure'):
             self.assertIn(f'\n{line}\n', sv)
         self.assertNotIn('[Install]', sv)
         self.assertNotIn('WantedBy', sv)
@@ -107,7 +123,8 @@ class TestRender(Base):
     def test_default_limits(self):
         """没给上限时：内存是这台电脑的一半、处理器一半的核（至少 1 核）。"""
         sl = self.files()['sop-my\\x2dapp.slice']
-        self.assertIn('MemoryMax=50%\n', sl)
+        half = os.sysconf('SC_PHYS_PAGES') * os.sysconf('SC_PAGE_SIZE') // 2
+        self.assertIn(f'MemoryMax={half + 512 * 1024 ** 2}\n', sl)
         cores = max(1, (os.cpu_count() or 2) // 2)
         self.assertIn(f'CPUQuota={cores * 100}%\n', sl)
 
@@ -132,35 +149,64 @@ class TestOomScore(Base):
         """服务里的进程（rootlesskit、dockerd、containerd）分数设成 100：普通用户能设的最低（系统给用户服务的默认是 200）。"""
         self.assertIn('\nOOMScoreAdjust=100\n', self.files()['sop-docker-my-app.service'])
 
-    def runc_sh(self):
+    def wrap_const(self, name):
         tree = ast.parse((REPO / 'runner' / 'docker' / 'dockerd_wrap.py').read_text())
         for n in tree.body:
-            if isinstance(n, ast.Assign) and getattr(n.targets[0], 'id', '') == 'RUNC_SH':
+            if isinstance(n, ast.Assign) and getattr(n.targets[0], 'id', '') == name:
                 return ast.literal_eval(n.value)
-        self.fail('dockerd_wrap.py 里没有 RUNC_SH')
+        self.fail(f'dockerd_wrap.py 里没有 {name}')
 
-    def run_wrapper(self, *args):
-        """用一个假的 runc（只记下收到的参数）跑 runc 外壳。"""
+    def run_wrapper(self, *args, check=True):
+        """用一个假的 runc（只记下收到的参数）跑 runc 外壳（和它用的 spec.py）。没调到 runc 时返回 None。"""
         b = self.tmp / 'bin'
         b.mkdir(exist_ok=True)
+        (b / 'args').unlink(missing_ok=True)
         (b / 'runc').write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$(dirname "$0")/args"\n')
         (b / 'runc').chmod(0o755)
+        (b / 'spec.py').write_text(self.wrap_const('SPEC_PY'))
         w = self.tmp / 'runc-wrap'
-        w.write_text(self.runc_sh().replace('@BIN@', str(b)))
+        w.write_text(self.wrap_const('RUNC_SH').replace('@BIN@', str(b)).replace('@SOP@', str(b)))
         w.chmod(0o755)
-        subprocess.run([str(w), *args], check=True)
-        return (b / 'args').read_text().splitlines()
+        p = subprocess.run([str(w), *args], capture_output=True, text=True)
+        if check:
+            self.assertEqual(p.returncode, 0, p.stderr)
+        return (b / 'args').read_text().splitlines() if (b / 'args').exists() else None
 
     def test_wrapper_raises_container_score(self):
-        """建容器：--bundle 下 config.json 里的分数（dockerd 给的，等于它自己的）改成 1000；别的不动；参数原样交给真的 runc。"""
+        """建容器：--bundle 下 config.json 里的分数（dockerd 给的，等于它自己的）改成 1000；容器的分组指到 ctr/<容器编号>、
+        超内存时整个容器一起杀（memory.oom.group，3-55）；别的不动；参数原样交给真的 runc。"""
         bundle = self.tmp / 'bundle'
         bundle.mkdir()
-        spec = {'ociVersion': '1.2.1', 'process': {'args': ['sh'], 'oomScoreAdj': 100}, 'root': {'path': 'rootfs'}}
+        spec = {'ociVersion': '1.2.1', 'process': {'args': ['sh'], 'oomScoreAdj': 100}, 'root': {'path': 'rootfs'},
+                'linux': {'namespaces': [{'type': 'cgroup'}]}}
         (bundle / 'config.json').write_text(json.dumps(spec, separators=(',', ':')))
         args = ['--root', '/x', '--log', '/x/log.json', 'create', '--bundle', str(bundle), '--pid-file', '/x/pid', 'c1']
         self.assertEqual(self.run_wrapper(*args), args)
         got = json.loads((bundle / 'config.json').read_text())
-        self.assertEqual(got, {**spec, 'process': {**spec['process'], 'oomScoreAdj': 1000}})
+        self.assertEqual(got, {**spec, 'process': {**spec['process'], 'oomScoreAdj': 1000},
+                               'linux': {**spec['linux'], 'cgroupsPath': 'ctr/c1',
+                                         'resources': {'unified': {'memory.oom.group': '1'}}}})
+        # 容器自己要了别的分组位置（例如 --cgroup-parent），也改回 ctr/ 下
+        # 原有的资源设置留着，只加 memory.oom.group
+        spec['linux']['cgroupsPath'] = '/elsewhere/c2'
+        spec['linux']['resources'] = {'pids': {'limit': 100}, 'unified': {'memory.oom.group': '0', 'cpu.weight': '50'}}
+        (bundle / 'config.json').write_text(json.dumps(spec))
+        self.run_wrapper('create', '--bundle', str(bundle), 'c2')
+        lx = json.loads((bundle / 'config.json').read_text())['linux']
+        self.assertEqual(lx['cgroupsPath'], 'ctr/c2')
+        self.assertEqual(lx['resources'], {'pids': {'limit': 100}, 'unified': {'memory.oom.group': '1', 'cpu.weight': '50'}})
+
+    def test_wrapper_refuses_when_it_cannot_place(self):
+        """改不成（容器编号认不出、config.json 坏了或没有）就不交给 runc：不让容器落到 ctr/ 外面、不受上限管。"""
+        bundle = self.tmp / 'bundle'
+        bundle.mkdir()
+        (bundle / 'config.json').write_text('{"process": {}}')
+        for cid in ('../x', '-x', ''):
+            self.assertIsNone(self.run_wrapper('create', '--bundle', str(bundle), cid, check=False))
+        self.assertEqual(json.loads((bundle / 'config.json').read_text()), {'process': {}})
+        (bundle / 'config.json').write_text('{坏')
+        self.assertIsNone(self.run_wrapper('create', '--bundle', str(bundle), 'c1', check=False))
+        self.assertIsNone(self.run_wrapper('create', '--bundle', str(self.tmp / 'nope'), 'c1', check=False))
 
     def test_wrapper_exec_and_other_commands(self):
         """docker exec 另起的进程（--process 文件）也改成 1000；带空格的写法也认；别的命令（state、kill、delete）什么都不改。"""
@@ -173,10 +219,19 @@ class TestOomScore(Base):
         self.assertEqual(self.run_wrapper('kill', str(other), 'KILL'), ['kill', str(other), 'KILL'])
         self.assertEqual(other.read_text(), '{"oomScoreAdj":200}')
 
+    def test_wrap_makes_container_group(self):
+        """换根脚本（3-55）：认准自己在服务分组的 daemon/ 里，打开服务分组下一层的开关，建 ctr/、写内存上限、不用交换区。
+        真的分组在虚拟机里验（tests/vm/dockersvc.sh）。"""
+        src = (REPO / 'runner' / 'docker' / 'dockerd_wrap.py').read_text()
+        for want in ("os.path.basename(own) != 'daemon'", "f'{SVC}/cgroup.subtree_control'", "CTR = SVC + '/ctr'",
+                     "(('memory.max', MEM), ('memory.swap.max', '0'))", "os.environ['SOPD_MEM']"):
+            self.assertIn(want, src)
+
     def test_wrapper_registered_as_default_runtime(self):
         """换根脚本把它放进新根、只读，并设成专用 Docker 默认的运行时。"""
         src = (REPO / 'runner' / 'docker' / 'dockerd_wrap.py').read_text()
         self.assertIn("ro(f'{NR}/sop')", src)
+        self.assertIn("os.chmod(f'{NR}/sop/spec.py', 0o444)", src)
         self.assertIn("'--add-runtime', 'sop-runc=/sop/runc', '--default-runtime', 'sop-runc'", src)
 
 
@@ -209,7 +264,7 @@ class TestInstall(Base):
         ctl = FakeCtl()
         S.install('my-app', self.root, {'memory': '300M'}, ctl=ctl)
         self.assertTrue(S.install('my-app', self.root, {'memory': '1G'}, ctl=ctl))
-        self.assertIn('MemoryMax=1G\n', (self.units / 'sop-my\\x2dapp.slice').read_text())
+        self.assertIn(f'MemoryMax={(1024 + 512) * 1024 ** 2}\n', (self.units / 'sop-my\\x2dapp.slice').read_text())
         sv = self.units / 'sop-docker-my-app.service'
         sv.write_text(sv.read_text() + 'ExecStartPost=/bin/sh -c 偷\n')
         self.assertTrue(S.install('my-app', self.root, {'memory': '1G'}, ctl=ctl))

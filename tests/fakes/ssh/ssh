@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""假的 ssh（3-10 的单元测试用）：只模仿 `ssh -T git@github.com` 试 GitHub 连不连得通。不连网、不读真的 ~/.ssh。
+- 必须带 BatchMode=yes（不然真的 ssh 可能停下来问「要不要信这台主机」、问口令）；
+- $HOME/.ssh/known_hosts 里要有一行 github.com 加假 gh 的 `api meta` 给的主机钥匙，不然「Host key verification failed.」；
+- $HOME/.ssh/ 下 id_ed25519.pub、id_ecdsa.pub、id_rsa.pub 之一在假 GitHub 上（$FAKEGH_HOME/auth.json 的 ssh_keys），
+  不然「Permission denied (publickey).」；
+- 都对：照真 GitHub 的样子说「Hi <账号>! ...」，退出码 1（GitHub 不给开终端）。账号是 $FAKESSH_LOGIN（默认 $FAKEGH_LOGIN、tester）；
+- $FAKESSH_MODE=timeout：连接超时。每次调用的参数记到 $FAKESSH_LOG（设了的话）。"""
+import json
+import os
+import sys
+
+args = sys.argv[1:]
+if os.environ.get('FAKESSH_LOG'):
+    with open(os.environ['FAKESSH_LOG'], 'a') as f:
+        f.write(' '.join(args) + '\n')
+if 'BatchMode=yes' not in args:
+    print('fake ssh: 没带 BatchMode=yes，真的 ssh 可能会停下来问', file=sys.stderr)
+    sys.exit(254)
+if os.environ.get('FAKESSH_MODE') == 'timeout':
+    print('ssh: connect to host github.com port 22: Connection timed out', file=sys.stderr)
+    sys.exit(255)
+home = os.environ['HOME']
+gh_home = os.environ.get('FAKEGH_HOME', '')
+auth = {}
+if gh_home and os.path.exists(os.path.join(gh_home, 'auth.json')):
+    with open(os.path.join(gh_home, 'auth.json')) as f:
+        auth = json.load(f)
+HOST_KEYS = ('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE',
+             'ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYFAKEFAKEFAKEFAKEFAKE=')
+kh = os.path.join(home, '.ssh', 'known_hosts')
+lines = open(kh).read().splitlines() if os.path.exists(kh) else []
+if not any(line.split()[:1] == ['github.com'] and ' '.join(line.split()[1:3]) in HOST_KEYS for line in lines if line.strip()):
+    print('No ED25519 host key is known for github.com and you have requested strict checking.\nHost key verification failed.',
+          file=sys.stderr)
+    sys.exit(255)
+mine = []
+for n in ('id_ed25519', 'id_ecdsa', 'id_rsa'):
+    p = os.path.join(home, '.ssh', n + '.pub')
+    if os.path.exists(p) and os.path.exists(p[:-4]):
+        mine.append(' '.join(open(p).read().split()[:2]))
+if not any(k in auth.get('ssh_keys', []) for k in mine):
+    print('git@github.com: Permission denied (publickey).', file=sys.stderr)
+    sys.exit(255)
+login = os.environ.get('FAKESSH_LOGIN') or os.environ.get('FAKEGH_LOGIN') or 'tester'
+print(f"Hi {login}! You've successfully authenticated, but GitHub does not provide shell access.", file=sys.stderr)
+sys.exit(1)

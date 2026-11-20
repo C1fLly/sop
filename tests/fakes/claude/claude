@@ -8,6 +8,7 @@
   fake://garbage  输出不是 JSON
   fake://slow     睡 30 秒
   fake://leak     报错里带着密钥原文（看适配器会不会去掉）
+  https://<上面几种>.fake.invalid 也一样（3-10：M4 只收 http(s) 开头的地址）
 程序名里带 old 的，--help 里少了 --max-budget-usd（模仿升级后改了用法）。
 每次 -p 调用在 $CLAUDE_CONFIG_DIR/projects/<工作目录改写>/<会话编号>.jsonl 留一行：收到的参数、环境变量的名字、状态目录里的设置。
 密钥只认 fake- 开头的；别的值一律不记（万一真的密钥漏进来，也不往文件里写）。"""
@@ -34,6 +35,8 @@ if '-p' not in argv:
     sys.exit(2)
 prompt = argv[argv.index('-p') + 1]
 mode = os.environ.get('ANTHROPIC_BASE_URL', '').replace('fake://', '')
+if '.fake.invalid' in mode:      # 3-10：M4 只收 http(s) 地址，https://<表现>.fake.invalid 也认
+    mode = mode.split('://', 1)[-1].split('.', 1)[0]
 tok = os.environ.get('ANTHROPIC_AUTH_TOKEN', '')
 cfg = os.environ.get('CLAUDE_CONFIG_DIR', '')
 sid = str(uuid.uuid4())

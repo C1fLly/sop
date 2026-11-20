@@ -22,7 +22,16 @@
     跑检查、只认报告里写的结论）。真的 GitHub 上项目检查的定义取自 PR 自己；假的不解读 PR 里的流程文件，总是照模板那样跑。
   - 公开仓库按 2026-12-02 之后的样子：没有事件规则放开 sop-guard.yml 的 pull_request_target，守门检查记成失败、不执行（W40 第二部分
     还没核实被挡时到底记成什么，这里按官方说的「失败」）。
-  流程沙箱里 World 自己造的仓库（db 里没有 checks）照旧：快档、全档一律成功，剧本可以改。"""
+  流程沙箱里 World 自己造的仓库（db 里没有 checks）照旧：快档、全档一律成功，剧本可以改。
+
+3-10 加的（M3 登录 GitHub 用）：$FAKEGH_HOME/auth.json 存在时，登录状态按它来（不存在时照旧：一律「登录了」）：
+- auth.json：{"logged_in": 真假, "scopes": [...], "ssh_keys": [公钥原文...], "calls": [记下的 auth、ssh-key 命令]}；
+- `auth status`：登录了照真 gh 的样子列账号、协议、权限（Token scopes），退出码 0；没登录时那句原话、退出码 1；
+- `auth login`：必须是网页登录（--web）；权限是 gh 去不掉的三项 repo、read:org、gist 加上 --scopes 给的；
+  $FAKEGH_LOGIN_FAIL 设了就失败（模仿用户关了浏览器）；`auth refresh --scopes` 加权限；
+- 没登录时 `api` 一律 401；`api user` 多给 id、name（$FAKEGH_ID、$FAKEGH_NAME）；
+- `api meta`：GitHub 的 SSH 主机钥匙（假的，tests/fakes/ssh/ssh 认这几行）；
+- `ssh-key add <公钥文件> --title …`：要有 admin:public_key 权限（没有时照真 GitHub 那样 404 并说要这项权限），记进 ssh_keys。"""
 import fcntl
 import fnmatch
 import json
@@ -279,10 +288,14 @@ def merge(s, pr, args):
 def main(args):
     if not args or args[0] in ('--version', 'version'):
         print('gh version 2.103.3 (fake)'); return 0
-    if args[:2] == ['auth', 'status']:
+    if os.path.exists(AUTH):
+        r = auth_cmd(args)
+        if r is not None:
+            return r
+    elif args[:2] == ['auth', 'status']:
         print('✓ Logged in to github.com (fake)'); return 0
     if args[:1] == ['api'] and api_parse(args, read_body=False)[1] == 'user':
-        out({'login': LOGIN}, args); return 0
+        out({'login': LOGIN, 'id': USER_ID, 'name': os.environ.get('FAKEGH_NAME', '')}, args); return 0
     if not os.path.exists(DB):
         if args[:2] == ['repo', 'view']:
             print(f"GraphQL: Could not resolve to a Repository with the name '{args[2] if len(args) > 2 else ''}'. (repository)",
@@ -371,6 +384,71 @@ def main(args):
 
 
 LOGIN = os.environ.get('FAKEGH_LOGIN', 'tester')
+USER_ID = int(os.environ.get('FAKEGH_ID', '1234567'))
+AUTH = os.path.join(HOME, 'auth.json')
+MIN_SCOPES = ['repo', 'read:org', 'gist']      # gh 网页登录总要的三项（去不掉）
+HOST_KEYS = ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE',
+             'ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYFAKEFAKEFAKEFAKEFAKE=']
+
+
+def auth_cmd(args):
+    """登录状态那几条命令（auth.json 存在时）。不是这几条返回 None，接着往下走。"""
+    with open(AUTH) as f:
+        a = json.load(f)
+
+    def save():
+        tmp = AUTH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(a, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, AUTH)
+
+    def scopes_opt():
+        v = opt(args, '--scopes') or opt(args, '-s') or ''
+        return [x for x in v.split(',') if x]
+
+    cmd = args[:2]
+    if cmd[:1] in (['auth'], ['ssh-key']):
+        a.setdefault('calls', []).append(args)
+        save()
+    if cmd == ['auth', 'status']:
+        if not a.get('logged_in'):
+            print('You are not logged into any GitHub hosts. To log in, run: gh auth login', file=sys.stderr); return 1
+        sc = ', '.join(f"'{x}'" for x in sorted(a.get('scopes', [])))
+        print(f'github.com\n  ✓ Logged in to github.com account {LOGIN} (keyring)\n  - Active account: true\n'
+              f'  - Git operations protocol: {a.get("protocol", "https")}\n  - Token: gho_************************************\n'
+              f'  - Token scopes: {sc}')
+        return 0
+    if cmd == ['auth', 'login']:
+        if '--web' not in args and '-w' not in args:
+            print('fake gh: 只会网页登录', file=sys.stderr); return 2
+        if os.environ.get('FAKEGH_LOGIN_FAIL'):
+            print('error: authentication cancelled', file=sys.stderr); return 1
+        print('! First copy your one-time code: FAKE-CODE', file=sys.stderr)
+        a.update(logged_in=True, scopes=sorted(set(MIN_SCOPES + scopes_opt())), protocol=opt(args, '--git-protocol') or opt(args, '-p') or 'https')
+        save()
+        print(f'✓ Logged in as {LOGIN}', file=sys.stderr); return 0
+    if cmd == ['auth', 'refresh']:
+        if not a.get('logged_in'):
+            print('not logged in to any hosts', file=sys.stderr); return 1
+        a['scopes'] = sorted(set(a.get('scopes', []) + scopes_opt()))
+        save()
+        print('✓ Authentication complete.', file=sys.stderr); return 0
+    if not a.get('logged_in') and args[:1] in (['api'], ['ssh-key'], ['repo'], ['pr']):
+        print('To get started with GitHub CLI, please run:  gh auth login', file=sys.stderr); return 4
+    if args[:1] == ['api'] and api_parse(args, read_body=False)[1] == 'meta':
+        out({'ssh_keys': HOST_KEYS, 'verifiable_password_authentication': False}, args); return 0
+    if cmd == ['ssh-key', 'add']:
+        if 'admin:public_key' not in a.get('scopes', []):
+            print('HTTP 404: Not Found (https://api.github.com/user/keys)\n'
+                  'This API operation needs the "admin:public_key" scope. To request it, run:  gh auth refresh -h github.com -s admin:public_key',
+                  file=sys.stderr); return 1
+        key = ' '.join(open(args[2]).read().split()[:2])
+        if key in a.setdefault('ssh_keys', []):
+            print('✓ Public key already exists on your account', file=sys.stderr); return 0
+        a['ssh_keys'].append(key)
+        save()
+        print('✓ Public key added to your account', file=sys.stderr); return 0
+    return None
 VALUE_OPTS = ('-X', '--method', '-F', '--field', '-f', '--raw-field', '--input', '--jq', '-q', '-H', '--header', '--json')
 
 

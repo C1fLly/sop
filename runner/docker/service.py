@@ -18,7 +18,7 @@
   - sop 要用时调 use()：先拿这个项目的「在用」锁（~/tools/sop/state/<项目名>/docker.lock，共享锁，几个 sop 可以同时用），
     再起（没在跑才起）、等它答话；sop 退出时放开锁、把锁文件的修改时间记成「最后一次用完」。进程怎么退出（含被强制结束、关掉终端）
     锁都由系统放开。
-  - 另有一个计时器 sop-docker-<项目名>-idle.timer（专用 Docker 起来时跟着起：服务的 Wants；它停了计时器跟着停：PartOf），
+  - 另有一个计时器 sop-idle-<项目名>.timer（专用 Docker 起来时跟着起：服务的 Wants；它停了计时器跟着停：PartOf），
     每分钟跑一次 idle-stop.sh（拷到数据目录，专用 Docker 的视野里没有它）：
     拿得到独占锁（没有 sop 在用）、且最后一次用完已经过了 15 分钟，就停掉专用 Docker。停的时候拿着锁，sop 这时要用就等它停完再起。
   - sop 每一步要用时把修改时间刷成现在；被强制结束的 sop 来不及记「最后一次用完」，按它最后一步开始用的时间算，
@@ -85,8 +85,10 @@ def service_name(project):
 
 
 def idle_name(project, suffix):
-    """闲了停的计时器（.timer）和它触发的服务（.service）。"""
-    return f'sop-docker-{paths.check_project_name(project)}-idle{suffix}'
+    """闲了停的计时器（.timer）和它触发的服务（.service）。
+    不能叫 sop-docker-<项目名>-idle（3-18 原来的名字）：项目 app 的 sop-docker-app-idle.service 就是项目 app-idle 的专用 Docker 服务，
+    装一个会把另一个的登记文件盖掉（3-19 验两个项目同时开时发现的）。前缀 sop-idle- 和 sop-docker- 不同，项目名又各不相同，四种名字互不重。"""
+    return f'sop-idle-{paths.check_project_name(project)}{suffix}'
 
 
 def lease_file(project):

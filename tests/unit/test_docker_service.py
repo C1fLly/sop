@@ -201,8 +201,8 @@ class TestInstall(Base):
         self.assertFalse(S.install('my-app', self.root, {'memory': '300M'}, ctl=ctl))
         self.assertEqual(ctl.calls, [('daemon-reload',)])
         self.assertEqual([f.stat().st_mtime_ns for f in (sv, sl, wrap)], mt)
-        self.assertEqual(sorted(os.listdir(self.units)), ['sop-docker-my-app-idle.service', 'sop-docker-my-app-idle.timer',
-                                                          'sop-docker-my-app.service', 'sop-my\\x2dapp.slice'])
+        self.assertEqual(sorted(os.listdir(self.units)), ['sop-docker-my-app.service', 'sop-idle-my-app.service',
+                                                          'sop-idle-my-app.timer', 'sop-my\\x2dapp.slice'])
 
     def test_change_limit_rewrites(self):
         """改了上限、手改过登记文件：按工具包的重写，再让服务管理器重读。"""
@@ -223,11 +223,32 @@ class TestInstall(Base):
         other.mkdir()
         S.install('my-app', self.root, ctl=ctl)
         S.install('my', other, ctl=ctl)
-        self.assertEqual(sorted(x for x in os.listdir(self.units) if '-idle.' not in x),
+        self.assertEqual(sorted(x for x in os.listdir(self.units) if not x.startswith('sop-idle-')),
                          ['sop-docker-my-app.service', 'sop-docker-my.service', 'sop-my.slice', 'sop-my\\x2dapp.slice'])
-        self.assertIn('sop-docker-my.service', (self.units / 'sop-docker-my-idle.service').read_text())
+        self.assertIn('sop-docker-my.service', (self.units / 'sop-idle-my.service').read_text())
         self.assertIn('Slice=sop-my.slice\n', (self.units / 'sop-docker-my.service').read_text())
         self.assertIn(f'"SOPD_PROJ={other}"', (self.units / 'sop-docker-my.service').read_text())
+
+    def test_names_never_collide_across_projects(self):
+        """3-19：任意两个不同的项目，四份登记文件的名字没有一个相同（3-18 原来的计时器名 sop-docker-<项目名>-idle 和
+        项目 <项目名>-idle 的专用 Docker 服务同名，装一个会盖掉另一个）；装两个、删一个，另一个的四份一份不少、内容不变。"""
+        names = ['a', 'app', 'app-idle', 'idle', 'idle-app', 'docker', 'docker-app', 'my', 'my-app', 'my-app-idle', 'x2d', 'sop']
+        seen = {}
+        for n in names:
+            for f in self.files() if n == 'my-app' else S.render(n, self.root):
+                self.assertNotIn(f, seen, f'{n} 和 {seen.get(f)} 都有 {f}')
+                seen[f] = n
+        ctl = FakeCtl()
+        S.install('app', self.root, ctl=ctl)
+        before = {f: (self.units / f).read_text() for f in os.listdir(self.units)}
+        other = self.tmp / 'Project' / 'app-idle'
+        other.mkdir()
+        S.install('app-idle', other, ctl=ctl)
+        self.assertEqual(len(os.listdir(self.units)), 8)
+        for f, t in before.items():
+            self.assertEqual((self.units / f).read_text(), t, f)
+        S.remove('app-idle', ctl=ctl)
+        self.assertEqual({f: (self.units / f).read_text() for f in os.listdir(self.units)}, before)
 
     def test_remove_keeps_data(self):
         """删掉：停服务（连同闲了停的计时器）、删四份登记文件、让服务管理器重读；数据目录（镜像、数据卷）不动。"""
@@ -237,7 +258,7 @@ class TestInstall(Base):
         ctl.calls.clear()
         S.remove('my-app', ctl=ctl)
         self.assertEqual(os.listdir(self.units), [])
-        self.assertEqual(ctl.calls[0], ('stop', 'sop-docker-my-app.service', 'sop-docker-my-app-idle.timer'))
+        self.assertEqual(ctl.calls[0], ('stop', 'sop-docker-my-app.service', 'sop-idle-my-app.timer'))
         self.assertIn(('daemon-reload',), ctl.calls)
         self.assertTrue((self.tools / 'docker-sop' / 'my-app' / 'data' / '镜像').exists())
         ctl.calls.clear()
@@ -271,8 +292,8 @@ class TestIdle(Base):
         """专用 Docker 起来时把计时器带起来（Wants）、它停了计时器跟着停（PartOf）；每分钟跑一次闲了停的脚本；
         两份都不设成登录后自己起来。脚本在数据目录（专用 Docker 的视野里没有），「在用」锁在 state 下。"""
         f = self.files()
-        sv, tm, isv = f['sop-docker-my-app.service'], f['sop-docker-my-app-idle.timer'], f['sop-docker-my-app-idle.service']
-        self.assertIn('\nWants=sop-docker-my-app-idle.timer\n', sv)
+        sv, tm, isv = f['sop-docker-my-app.service'], f['sop-idle-my-app.timer'], f['sop-idle-my-app.service']
+        self.assertIn('\nWants=sop-idle-my-app.timer\n', sv)
         self.assertIn('\nPartOf=sop-docker-my-app.service\n', tm)
         for line in ('OnActiveSec=60', 'OnUnitActiveSec=60'):
             self.assertIn(f'\n{line}\n', tm)
@@ -281,7 +302,7 @@ class TestIdle(Base):
         self.assertIn(f'\nType=oneshot\nExecStart={rd}/idle-stop.sh sop-docker-my-app.service {lock} 900\n', isv)
         for t in (sv, tm, isv):
             self.assertNotIn('[Install]', t)
-        self.assertIn(' 60\n', self.files(idle=60)['sop-docker-my-app-idle.service'])
+        self.assertIn(' 60\n', self.files(idle=60)['sop-idle-my-app.service'])
         for bad in (0, -1, '900', 8 * 24 * 3600):
             with self.assertRaises(S.ServiceError):
                 self.files(idle=bad)

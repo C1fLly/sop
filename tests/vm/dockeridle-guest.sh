@@ -5,7 +5,7 @@ SRC=~/sop-src
 PROXY=http://10.0.2.2:7890          # 虚拟机里 10.0.2.2 就是本机，本机的代理
 NOPROXY="-u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u no_proxy -u NO_PROXY"
 UNITS=~/.config/systemd/user
-P=demo-x; SV=sop-docker-$P.service; TM=sop-docker-$P-idle.timer; ISV=sop-docker-$P-idle.service
+P=demo-x; SV=sop-docker-$P.service; TM=sop-idle-$P.timer; ISV=sop-idle-$P.service
 LOCK=~/tools/sop/state/$P/docker.lock
 FX=~/fx                              # 假项目放在主目录下：重启后还要用（/tmp 重启就没了）
 IDLE=120                             # 为了不等 15 分钟，闲 2 分钟就停（正式的 900 秒）；计时器每分钟看一次，和正式的一样

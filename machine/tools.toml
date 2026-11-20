@@ -18,7 +18,8 @@
 #
 # 版本下限先按第一段、第二段实际用过的版本写（W27、W36，本机）；3-08、3-09、3-22 真装时再核对。
 # 安装脚本在 machine/install/ 下：uv、nvm、Node、pnpm、gh 是 3-08 写的；免管理员 Docker 是 3-09 写的（它要的 iptables、
-# 网络模块、系统规则在它自己的脚本里装，不另列），wt 3-22 写。「apt:」那几样由 machine/install.py 合成一次 apt 装。
+# 网络模块、系统规则在它自己的脚本里装，不另列）；wt 是 3-22 写的（经 SSH 从私有仓库克隆、切到主线上最新的版本标签；
+# 出口检查 wt doctor 的环境部分在 machine/wtsetup.py）。「apt:」那几样由 machine/install.py 合成一次 apt 装。
 
 [[tool]]
 name = "git"

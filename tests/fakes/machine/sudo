@@ -1,0 +1,5 @@
+#!/bin/sh
+# 假的 sudo（流程沙箱 3-12 用，保险）：剧本本来不该走到要管理员密码的那一步。真走到了只记一行、失败退出，什么都不执行。
+[ -n "${FAKE_SETUP_DIR:-}" ] && echo "$*" >> "$FAKE_SETUP_DIR/sudo.log"
+echo "假的 sudo：这个剧本不该要管理员密码" >&2
+exit 1

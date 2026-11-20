@@ -231,10 +231,13 @@ class TestMachineCli(TempHome):
         p = self.sop('machine')
         self.assertEqual(p.returncode, 0)
         self.assertIn('sop machine tools', p.stdout)
-        for cmd, task in (('setup', '3-12'), ('migrate', '3-31')):
-            p = self.sop('machine', cmd)
-            self.assertEqual(p.returncode, 2)
-            self.assertIn(task, p.stdout)
+        p = self.sop('machine', 'migrate')
+        self.assertEqual(p.returncode, 2)
+        self.assertIn('3-31', p.stdout)
+        # sop machine setup 3-12 做好了：这里只看用法写错时不动手（真跑会改主目录，只在流程沙箱的临时「电脑」里跑）
+        p = self.sop('machine', 'setup', '--bogus')
+        self.assertEqual(p.returncode, 2)
+        self.assertIn('sop machine setup', p.stdout)
         p = self.sop('machine', 'nonsense')
         self.assertEqual(p.returncode, 2)
         self.assertIn('不认识的命令', p.stdout)

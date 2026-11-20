@@ -1,11 +1,13 @@
 """机器级配置和登记（设计书 3.2、4.3、4.4、4.5），都在 ~/tools/sop/config/ 下，JSON（3.3）。
 
-三份：
+四份：
 - network.json  网络设置：代理、软件源。第零步写，之后可改；安装脚本按它配置各工具（4.4）。
 - tools.json    工具实际位置登记：每样工具在哪、什么版本、是不是规定位置那一份、另有几份在哪（4.3「合格」）；
                 AI 工具保持默认位置，也登记在这里（种类写 ai），连同最近一次做过真实 AI 演练的版本（10.1）。
 - system.json   系统组件版本登记：内核、bubblewrap、免管理员 Docker 那条系统规则、系统对普通用户建隔离空间的限制、
                 往终端塞按键的开关（4.5）。怎么查见 components.py（3-05）。sop 每次启动拿现在的和它比，变了先重跑隔离自检（3-07）。
+- setup.json    sop machine setup（M2 到 M7）的进度：哪一步在做（中途断了下次认得出）、哪几步通过过、
+                M4 自检通过时 AI 工具的样子（版本、登记文件），没变就不再真调（3-12，machine/setup.py）。
 
 规矩：目录只有用户自己能进（0700）、文件只有用户自己能读（0600，代理设置里可能带账号密码）；
 读改写时先上锁（几个 sop 可能同时写）；先写临时文件再换名，写到一半断了也不会留下坏文件。
@@ -20,7 +22,7 @@ from kernel import paths
 from kernel.errors import SopError
 from kernel.locks import FileLock
 
-NAMES = ('network', 'tools', 'system')
+NAMES = ('network', 'tools', 'system', 'setup')
 NETWORK_KEYS = {
     'http_proxy': '网页代理（http://主机:端口）',
     'https_proxy': '加密网页代理（多半和上一个一样）',

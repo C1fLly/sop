@@ -1,0 +1,88 @@
+# 假的工具清单（流程沙箱 3-12 用：sop machine setup 经环境变量 SOP_TOOLS_TOML 读它，不用真的 machine/tools.toml）。
+# 字段和真的一样（machine/catalog.py 照样核对）；安装脚本是 install/ 下假的，不连网、不要管理员密码，
+# 只往 $SOP_TOOLS（临时工具目录）下放一个假程序。剧本放在 $FAKE_SETUP_DIR（见 install/lib.sh）。
+# git 用本机的（系统软件包那种，测试机上一定有，所以不会去调 apt）；万一调了，PATH 里的 sudo 也是假的。
+
+[[tool]]
+name = "git"
+what = "版本管理"
+version = ">=2.30"
+location = "系统软件包"
+check = "git --version"
+install = "apt:git"
+admin = true
+step = "M0"
+command = "git"
+
+[[tool]]
+name = "uv"
+what = "假的 uv"
+version = ">=0.13"
+location = "~/tools/uv"
+check = '"$SOP_TOOLS/uv/bin/uv" --version'
+install = "script:install/uv.sh"
+admin = false
+step = "M0"
+
+[[tool]]
+name = "nvm"
+what = "假的 nvm"
+version = ">=0.40"
+location = "~/tools/nvm"
+check = '"$SOP_TOOLS/nvm/bin/nvm" --version'
+install = "script:install/nvm.sh"
+admin = false
+step = "M2"
+
+[[tool]]
+name = "node"
+what = "假的 Node"
+version = ">=24"
+location = "~/tools/nvm"
+check = '"$SOP_TOOLS/nvm/bin/node" --version'
+install = "script:install/node.sh"
+admin = false
+step = "M2"
+needs = ["nvm"]
+
+[[tool]]
+name = "pnpm"
+what = "假的 pnpm"
+version = ">=12"
+location = "~/tools/nvm"
+check = '"$SOP_TOOLS/nvm/bin/pnpm" --version'
+install = "script:install/pnpm.sh"
+admin = false
+step = "M2"
+needs = ["node"]
+
+[[tool]]
+name = "gh"
+what = "GitHub 的命令行（放的是 tests/fakes/gh/gh）"
+version = ">=2.60"
+location = "~/tools/gh"
+check = 'GH_TELEMETRY=0 "$SOP_TOOLS/gh/bin/gh" --version'
+install = "script:install/gh.sh"
+admin = false
+step = "M2"
+
+[[tool]]
+name = "docker"
+what = "假的免管理员 Docker"
+version = ">=29"
+location = "~/tools/docker"
+check = '"$SOP_TOOLS/docker/bin/docker" --version'
+install = "script:install/docker.sh"
+admin = false
+step = "M2"
+
+[[tool]]
+name = "wt"
+what = "管工作目录（放的是 tests/fakes/machine/wt）"
+version = ">=1.3"
+location = "~/tools/wt"
+check = 'bash "$SOP_TOOLS/wt/wt" --version'
+install = "script:install/wt.sh"
+admin = false
+step = "M5"
+needs = ["git", "gh"]

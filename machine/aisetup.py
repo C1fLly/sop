@@ -21,6 +21,7 @@ import sys
 import urllib.parse
 
 from kernel import paths
+from . import config
 from kernel.errors import SopError
 
 URL = re.compile(r'^https?://[^\s/?#]+(/[^\s]*)?$')
@@ -127,8 +128,8 @@ def show_url(url):
     return urllib.parse.urlunsplit((u.scheme, host, u.path, '', ''))
 
 
-def check_tool(name, adapter=None):
-    """一个工具的出口检查：登记文件对，再自检（真发一次最短的调用）。"""
+def precheck_tool(name):
+    """出口检查里不花钱的那一半：登记文件在、只有自己能读、有地址、有密钥。都对返回 None，不对返回不通过的 ToolCheck。"""
     spec = TOOLS[name]
     label = spec['label']
     f = env_file(name)
@@ -142,6 +143,41 @@ def check_tool(name, adapter=None):
         return ToolCheck(name, label, False, f'{short} 里没有服务地址（{spec["url_var"]}）')
     if not any(vals.get(k) for k in spec['key_vars']):
         return ToolCheck(name, label, False, f'{short} 里没有密钥（{" 或 ".join(spec["key_vars"])}）')
+    return None
+
+
+def fingerprint(name, adapter=None):
+    """自检通过时这个工具是什么样子（不花钱就查得到的）：程序实际在哪、版本、登记文件（编号、大小、修改时间；不读密钥）。
+    sop machine setup 拿它判断「上次自检通过以后变没变」，没变就不再真调（3-12）。查不到（没装、没登记）是 None。"""
+    a = adapter or TOOLS[name]['adapter']()
+    try:
+        st = os.stat(env_file(name))
+    except FileNotFoundError:
+        return None
+    _, real = a.location()
+    ver = a.version() if real else ''
+    if not real or not ver:
+        return None
+    return {'path': real, 'version': ver, 'env': [st.st_ino, st.st_size, st.st_mtime_ns]}
+
+
+def still_good(name, recorded, adapter=None):
+    """上次 sop machine setup 里自检通过时记下的 recorded 和现在比：不花钱的那一半都对、样子一点没变、
+    机器级登记里最近一次自检也是通过的，返回 True（这次不用再真调）。"""
+    if not recorded or precheck_tool(name) is not None:
+        return False
+    now = fingerprint(name, adapter)
+    reg = config.tools().get(name) or {}
+    return now == recorded and bool(reg.get('probe_ok')) and reg.get('probed_version') == now['version']
+
+
+def check_tool(name, adapter=None):
+    """一个工具的出口检查：登记文件对，再自检（真发一次最短的调用）。"""
+    spec = TOOLS[name]
+    label = spec['label']
+    bad = precheck_tool(name)
+    if bad is not None:
+        return bad
     a = adapter or spec['adapter']()
     try:
         r = a.probe()

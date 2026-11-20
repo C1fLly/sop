@@ -42,6 +42,7 @@ class Tool:
     needs: tuple = ()
     command: str = ''          # 命令名：系统软件包靠它找实际在哪；工具包自己装的，体检按它在 PATH 里找另外几份
     elsewhere: tuple = ()      # 别的装法常放的位置（~/ 开头或绝对路径），体检看有没有另一份（4.3）
+    base: pathlib.Path | None = dataclasses.field(default=None, compare=False, repr=False)   # 安装脚本的相对路径从哪里算（清单所在的目录；没给就是 machine/）
 
     @property
     def system_package(self):
@@ -56,7 +57,7 @@ class Tool:
     def install_kind(self):
         """('apt', 软件包名) 或 ('script', 安装脚本的路径)。"""
         kind, _, what = self.install.partition(':')
-        return (kind, what) if kind == 'apt' else (kind, HERE / what)
+        return (kind, what) if kind == 'apt' else (kind, (self.base or HERE) / what)
 
 
 def parse_version(text):
@@ -125,8 +126,10 @@ def _check_entry(i, d, seen):
     return Tool(**{k: d[k] for k in FIELDS}, needs=tuple(needs), command=command, elsewhere=tuple(elsewhere))
 
 
-def load(path=DEFAULT):
-    """读清单，按写的先后返回 Tool 的列表。"""
+def load(path=None):
+    """读清单，按写的先后返回 Tool 的列表。不给 path 就是工具包自带的 machine/tools.toml；
+    测试用环境变量 SOP_TOOLS_TOML 换成别的清单（流程沙箱里用假的安装脚本，3-12），安装脚本按那份清单所在的目录找。"""
+    path = pathlib.Path(path or os.environ.get('SOP_TOOLS_TOML') or DEFAULT)
     try:
         data = tomllib.loads(pathlib.Path(path).read_text())
     except (OSError, tomllib.TOMLDecodeError) as e:
@@ -136,7 +139,7 @@ def load(path=DEFAULT):
         raise CatalogError('工具清单里一项工具都没有')
     tools, seen = [], set()
     for i, d in enumerate(items):
-        t = _check_entry(i, d, seen)
+        t = dataclasses.replace(_check_entry(i, d, seen), base=path.resolve().parent)
         seen.add(t.name)
         tools.append(t)
     return tools

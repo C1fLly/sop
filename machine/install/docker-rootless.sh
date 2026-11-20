@@ -123,8 +123,9 @@ if [ ${#pkgs[@]} -gt 0 ] || [ -n "$load_module$write_rule" ]; then
   { echo 'set -e'
     if [ ${#pkgs[@]} -gt 0 ]; then
       echo 'export DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1'   # 不要 needrestart 那几行英文
-      echo 'apt-get -o DPkg::Lock::Timeout=300 update -qq'     # 刚开机时系统可能正在自己更新、占着锁：等它最多 5 分钟
-      echo "apt-get -o DPkg::Lock::Timeout=300 install -y -qq --no-install-recommends ${pkgs[*]} >/dev/null"
+      cat "$(dirname "$0")/apt.sh" || die "找不到 apt.sh"     # 刚开机时系统可能正在自己更新、占着锁：sop_apt 等它（3-56）
+      echo 'sop_apt update -qq'
+      echo "sop_apt install -y -qq --no-install-recommends ${pkgs[*]}"
     fi
     [ -n "$load_module" ] && echo "modprobe $module"
     if [ -n "$write_rule" ]; then
@@ -141,9 +142,13 @@ if [ ${#pkgs[@]} -gt 0 ] || [ -n "$load_module$write_rule" ]; then
   echo "系统会问这台电脑的登录密码（就是开机登录用的那个），输入时屏幕上什么都不显示，输完按回车。"
   command -v sudo >/dev/null || die "这台电脑上没有 sudo，这一步做不了"
   penv=()
-  for k in http_proxy https_proxy no_proxy; do [ -n "${!k:-}" ] && penv+=("$k=${!k}"); done
-  sudo -p "[sudo] 请输入 %u 的登录密码：" env "${penv[@]}" bash "$root" \
-    || die "要管理员权限的那一步没做成（密码不对、这个账号不能用 sudo、不是在终端里运行的，或者连不上软件源；看上面的报错）"
+  for k in http_proxy https_proxy no_proxy SOP_APT_WAIT; do [ -n "${!k:-}" ] && penv+=("$k=${!k}"); done
+  rc=0; sudo -p "[sudo] 请输入 %u 的登录密码：" env "${penv[@]}" bash "$root" || rc=$?
+  case $rc in
+    0) ;;
+    75) die "要管理员权限的那一步没做成：系统正在自己更新软件，等了好几分钟还没做完（刚开机、或很久没开机时常有）。不是你做错了什么：过一会儿再执行一次同样的命令就行" ;;
+    *) die "要管理员权限的那一步没做成（密码不对、这个账号不能用 sudo、不是在终端里运行的，或者连不上软件源；看上面的报错；退出码 $rc）" ;;
+  esac
   echo "要管理员权限的那一步做完了。"
 fi
 

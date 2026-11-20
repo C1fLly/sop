@@ -426,7 +426,8 @@ class TestInstallApt(TempHome):
         self.assertNotIn('HTTP_PROXY=http://p:1', cmd)
         self.assertIn('DEBIAN_FRONTEND=noninteractive', cmd)
         self.assertEqual(cmd[-3:], ['sop-apt', 'uidmap', 'dbus-user-session'])
-        self.assertIn('Lock::Timeout', ' '.join(cmd))
+        self.assertIn('sop_apt update -qq && sop_apt install', cmd[-4])   # 等住软件包的锁（3-56）
+        self.assertIn(install.APT_SH.read_text(), cmd[-4])
 
     def test_nothing_to_do_and_failure(self):
         calls, run = self.fake_run()
@@ -437,3 +438,119 @@ class TestInstallApt(TempHome):
             ok, msg = install.install_apt([catalog.find('uidmap')], net={}, run=run)
         self.assertFalse(ok)
         self.assertIn('没装上', msg)
+        self.assertIn('密码不对', msg)
+        for rc, said, not_said in ((75, '系统正在自己更新软件', '密码不对'), (100, '连不上软件源', '密码不对')):
+            calls, run = self.fake_run(rc=rc)
+            with contextlib.redirect_stdout(io.StringIO()):
+                ok, msg = install.install_apt([catalog.find('uidmap')], net={}, run=run)
+            self.assertFalse(ok)
+            self.assertIn(said, msg)
+            self.assertNotIn(not_said, msg)
+
+
+# 假的 apt-get：前 $FAKE_LOCKED 次报「锁被占」（$FAKE_LOCK_MSG 指定哪句），之后成功；$FAKE_APT_RC 有值时一律按它报别的错
+FAKE_APT = '''#!/bin/bash
+n=$(( $(cat "$T/apt-calls" 2>/dev/null || echo 0) + 1 )); echo $n > "$T/apt-calls"
+echo "apt-get $* SOP_APT_WAIT=${SOP_APT_WAIT:-}" >> "$T/apt.log"
+echo "normal output that should be hidden"
+if [ -n "${FAKE_APT_RC:-}" ]; then echo "E: Unable to locate package nope" >&2; exit "$FAKE_APT_RC"; fi
+if [ "$n" -le "${FAKE_LOCKED:-0}" ]; then
+  printf '%s\n' "${FAKE_LOCK_MSG:-E: Could not get lock /var/lib/apt/lists/lock. It is held by process 1234 (apt-get)}" >&2
+  echo "E: Unable to lock directory /var/lib/apt/lists/" >&2
+  exit 100
+fi
+[ -z "${FAKE_WARN:-}" ] || echo "W: $FAKE_WARN" >&2
+exit 0
+'''
+# 假的时钟：sleep 不真睡，只把时钟往后拨；date +%s 读这个时钟
+FAKE_SLEEP = '#!/bin/bash\necho $(( $(cat "$T/clock" 2>/dev/null || echo 0) + $1 )) > "$T/clock"\n'
+FAKE_DATE = '#!/bin/bash\necho $(( 1700000000 + $(cat "$T/clock" 2>/dev/null || echo 0) ))\n'
+
+
+class TestAptWait(TempHome):
+    """3-56：系统正在自己更新软件、占着软件包的锁时，等它（apt.sh 的 sop_apt）。
+    真的 apt 只在虚拟机里（tests/vm/aptlock.sh）；这里用假的 apt-get、假的时钟。"""
+
+    def setUp(self):
+        super().setUp()
+        self.bin = self.tmp / 'bin'
+        self.bin.mkdir()
+        for name, body in (('apt-get', FAKE_APT), ('sleep', FAKE_SLEEP), ('date', FAKE_DATE),
+                           ('sudo', '#!/bin/bash\nshift 2\nexec "$@"\n')):     # 假 sudo：去掉 -p 提示，直接跑
+            (self.bin / name).write_text(body)
+            (self.bin / name).chmod(0o755)
+
+    def env(self, **extra):
+        return {'PATH': f'{self.bin}:/usr/bin:/bin', 'LANG': 'C.UTF-8', 'T': str(self.tmp), **extra}
+
+    def sop_apt(self, *args, **extra):
+        return subprocess.run(['sh', '-c', f'. "{install.APT_SH}"; sop_apt "$@"', 'x', *args],
+                              capture_output=True, text=True, env=self.env(**extra))
+
+    def calls(self):
+        return int((self.tmp / 'apt-calls').read_text())
+
+    def test_waits_until_lock_free(self):
+        r = self.sop_apt('update', '-qq', FAKE_LOCKED='3', FAKE_WARN='a warning')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.calls(), 4)                       # 三次锁被占，第四次成了
+        self.assertEqual(r.stderr.count('系统正在自己更新软件'), 1)   # 只说一次
+        self.assertIn('最多等 10 分钟', r.stderr)
+        self.assertNotIn('Could not get lock', r.stderr)        # 等到了就不打 apt 那几行英文
+        self.assertIn('W: a warning', r.stderr)                 # 警告照打
+        self.assertEqual(r.stdout, '')                          # 正常的输出扔掉
+        self.assertIn('apt-get update -qq', (self.tmp / 'apt.log').read_text())
+
+    def test_every_lock_and_language(self):
+        for msg in ('E: Could not get lock /var/cache/apt/archives/lock. It is held by process 9 (unattended-upgr)',
+                    'E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 9 (unattended-upgr)',
+                    'E: Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), is another process using it?',
+                    'E: 无法获得锁 /var/lib/apt/lists/lock。锁正由进程 9（apt-get）持有'):
+            (self.tmp / 'apt-calls').unlink(missing_ok=True)
+            r = self.sop_apt('install', '-y', 'git', FAKE_LOCKED='1', FAKE_LOCK_MSG=msg)
+            self.assertEqual((r.returncode, self.calls()), (0, 2), msg)
+
+    def test_gives_up_with_75(self):
+        r = self.sop_apt('update', FAKE_LOCKED='999', SOP_APT_WAIT='130')
+        self.assertEqual(r.returncode, 75)
+        self.assertEqual(self.calls(), 27)                      # 0、5、……、130 秒各试一次
+        self.assertIn('最多等 3 分钟', r.stderr)
+        self.assertEqual(r.stderr.count('还在等'), 2)           # 每分钟说一句
+        self.assertIn('Could not get lock', r.stderr)           # 等不到才把 apt 的原话打出来
+        self.assertIn('还没做完', r.stderr)
+
+    def test_other_errors_not_waited(self):
+        r = self.sop_apt('install', 'nope', FAKE_APT_RC='100')
+        self.assertEqual(r.returncode, 100)
+        self.assertEqual(self.calls(), 1)
+        self.assertIn('Unable to locate package', r.stderr)
+        self.assertNotIn('系统正在自己更新', r.stderr)
+
+    def test_install_apt_end_to_end(self):
+        """install_apt 真的拼出来的那条命令（假 sudo、真 env 和 sh）：等到了装上；等不到说系统正在自己更新、不说密码不对。"""
+        def run(cmd, **kw):
+            return subprocess.run(cmd, env=self.env(**env), capture_output=True, text=True)
+        tools = [catalog.find('uidmap')]
+        env = {'FAKE_LOCKED': '2'}
+        with contextlib.redirect_stdout(io.StringIO()):
+            ok, msg = install.install_apt(tools, net={}, run=run)
+        self.assertTrue(ok, msg)
+        log = (self.tmp / 'apt.log').read_text().splitlines()
+        self.assertEqual([x.split()[1] for x in log], ['update', 'update', 'update', 'install'])
+        self.assertIn('--no-install-recommends uidmap', log[-1])
+        (self.tmp / 'apt-calls').unlink()
+        env = {'FAKE_LOCKED': '999'}
+        with mock_env({'SOP_APT_WAIT': '20'}), contextlib.redirect_stdout(io.StringIO()):
+            ok, msg = install.install_apt(tools, net={}, run=run)
+        self.assertFalse(ok)
+        self.assertIn('系统正在自己更新软件', msg)
+        self.assertNotIn('密码不对', msg)
+        self.assertIn('SOP_APT_WAIT=20', (self.tmp / 'apt.log').read_text())   # 期限给得进 sudo
+
+    def test_docker_script_uses_it(self):
+        """Docker 的安装脚本给 sudo 的那一小段载入 apt.sh、用 sop_apt；认出 75。"""
+        t = (REPO / 'machine/install/docker-rootless.sh').read_text()
+        self.assertIn('cat "$(dirname "$0")/apt.sh"', t)
+        self.assertIn("echo 'sop_apt update -qq'", t)
+        self.assertIn('75) die', t)
+        self.assertNotIn('-o DPkg::Lock::Timeout', t)

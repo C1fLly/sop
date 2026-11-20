@@ -32,6 +32,46 @@ SUDO_PROMPT='[sudo] 请输入 %u 的登录密码：'
 NO_NET='可以问一下懂网络的人这台电脑上网用的代理地址，再重新执行这一步；完全连不上外网的，用离线包（小白手册「完全连不上网」那一节）'
 PROXY_RE='^https?://[^[:space:]/:]+(:[0-9]{1,5})?/?$'   # 只认网页代理：系统自带的 wget 不支持 socks
 
+# ---------- 等住软件包的锁（3-56）：和 machine/install/apt.sh 一字不差（单元测试核对），这里要单独运行所以抄一份 ----------
+SOP_APT_SH=$(cat <<'SOP_APT_END'
+# 共用的一小段（3-56）：用 apt-get 装系统软件包时，等住软件包的锁。不单独运行，由要管理员权限的那一小段脚本先载入再用：
+#   machine/install.py、machine/install/docker-rootless.sh 读这个文件；bootstrap.sh 要单独运行，里面抄了一份，
+#   单元测试核对两份一字不差。只用 sh 的写法（install.py、bootstrap.sh 用 sh -c 跑，docker-rootless.sh 用 bash 跑）。
+#
+# 刚开机时系统常常正在自己更新软件（apt-daily、unattended-upgrades），占着软件包的锁。apt 的 DPkg::Lock::Timeout
+# 只管 dpkg 的锁；apt-get update 要的 /var/lib/apt/lists/lock、下载要的 /var/cache/apt/archives/lock 拿不到就立刻报错退出
+# （退出码 100，虚拟机里试过，apt 3.2.1）。所以这里自己等：报错里提到这几把锁，就隔 5 秒再试，
+# 一共最多等 SOP_APT_WAIT 秒（默认 600，即 10 分钟），等不到退出码 75，上面认出 75 说「系统正在自己更新软件」。
+# 报错里的锁文件路径不随系统语言变，所以按路径认。apt 正常的输出扔掉，报错和警告照原样打出来。
+sop_apt() {
+  _sop_limit=${SOP_APT_WAIT:-600} _sop_start=$(date +%s) _sop_said=0
+  while :; do
+    _sop_err=$(apt-get "$@" 2>&1 >/dev/null) && { [ -z "$_sop_err" ] || printf '%s\n' "$_sop_err" >&2; return 0; }
+    _sop_rc=$?
+    case $_sop_err in
+      *'/var/lib/apt/lists/lock'*|*'/var/cache/apt/archives/lock'*|*'/var/lib/dpkg/lock'*) ;;
+      *) printf '%s\n' "$_sop_err" >&2; return $_sop_rc ;;
+    esac
+    _sop_used=$(( $(date +%s) - _sop_start ))
+    if [ "$_sop_used" -ge "$_sop_limit" ]; then
+      printf '%s\n' "$_sop_err" >&2
+      echo "等了 $(( (_sop_used + 59) / 60 )) 分钟，系统自己的软件更新还没做完，还占着软件包的锁。" >&2
+      return 75
+    fi
+    if [ "$_sop_said" = 0 ]; then
+      echo "系统正在自己更新软件（刚开机时常有），占着软件包的锁。等它做完再接着装，最多等 $(( (_sop_limit + 59) / 60 )) 分钟……" >&2
+      _sop_said=60
+    elif [ "$_sop_used" -ge "$_sop_said" ]; then
+      echo "还在等系统自己的软件更新（已经等了 $(( _sop_used / 60 )) 分钟）……" >&2
+      _sop_said=$(( _sop_said + 60 ))
+    fi
+    sleep 5
+  done
+}
+SOP_APT_END
+)
+APT_LOCKED='系统正在自己更新软件，等了好几分钟还没做完（刚开机、或很久没开机时常有）。不是你做错了什么：过一会儿再执行一次同样的命令就行'
+
 say() { printf '%s\n' "$*"; }
 step() { printf '\n== %s ==\n' "$*"; }
 die() { printf '\n没做完：%s\n' "$*" >&2; exit 1; }
@@ -213,10 +253,18 @@ install_apt() {
   local -a e=()
   [ -n "$PROXY" ] && e+=(http_proxy="$PROXY" https_proxy="$PROXY")
   [ -n "$NOPROXY" ] && e+=(no_proxy="$NOPROXY")
+  [ -n "${SOP_APT_WAIT:-}" ] && e+=(SOP_APT_WAIT="$SOP_APT_WAIT")
+  local rc=0
   sudo -p "$SUDO_PROMPT" env "${e[@]}" DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 sh -c \
-    'apt-get -o DPkg::Lock::Timeout=300 update -qq && apt-get -o DPkg::Lock::Timeout=300 install -y -qq --no-install-recommends "$@" >/dev/null' \
-    sop-apt "${need[@]}" </dev/null \
-    || die "${need[*]} 没装上（密码不对、这个账号不能用 sudo，或者连不上软件源）"
+    "$SOP_APT_SH"'
+sop_apt update -qq && sop_apt install -y -qq --no-install-recommends "$@"' \
+    sop-apt "${need[@]}" </dev/null || rc=$?
+  case $rc in
+    0) ;;
+    75) die "${need[*]} 没装上：$APT_LOCKED" ;;
+    100) die "${need[*]} 没装上：系统装软件的程序报错了（多半是连不上软件源，看上面的报错）" ;;
+    *) die "${need[*]} 没装上（密码不对，或者这个账号不能用 sudo；退出码 $rc）" ;;
+  esac
   say "${need[*]} 装好了"
 }
 
@@ -225,19 +273,27 @@ install_apt() {
 install_apt_offline() {
   local debs=$OFFLINE/debs
   [ -f "$debs/Packages" ] || die "离线包里没有系统软件包（$debs）：离线包不完整，重新拷一次"
-  sudo -p "$SUDO_PROMPT" env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 sh -c '
+  local -a e=()
+  [ -n "${SOP_APT_WAIT:-}" ] && e+=(SOP_APT_WAIT="$SOP_APT_WAIT")
+  local rc=0
+  sudo -p "$SUDO_PROMPT" env "${e[@]}" DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 sh -c "$SOP_APT_SH"'
     debs=$1; shift
     w=$(mktemp -d /tmp/sop-offline-apt.XXXXXX) || exit 1
     chmod 755 "$w"      # 系统的下载程序（_apt 账号）要进得去，不然 apt 报一串英文警告
     mkdir -p "$w/lists/partial" "$w/cache/archives/partial" "$w/parts"
     printf "deb [trusted=yes] file:%s ./\n" "$debs" > "$w/sources.list"
-    o="-o DPkg::Lock::Timeout=300 -o Dir::Etc::SourceList=$w/sources.list -o Dir::Etc::SourceParts=$w/parts"
+    o="-o Dir::Etc::SourceList=$w/sources.list -o Dir::Etc::SourceParts=$w/parts"
     o="$o -o Dir::State::Lists=$w/lists -o Dir::Cache=$w/cache"
-    apt-get $o update -qq >/dev/null && apt-get $o install -y -qq --no-install-recommends "$@" >/dev/null
+    # 索引和下载的锁在临时目录里，没人抢；dpkg 的锁和系统共用，系统正在自己更新时 sop_apt 等它
+    sop_apt $o update -qq && sop_apt $o install -y -qq --no-install-recommends "$@"
     rc=$?
     rm -rf "$w"
-    exit $rc' sop-apt "$debs" "$@" </dev/null \
-    || die "$* 没装上（密码不对、这个账号不能用 sudo，或者离线包里的软件包和这台电脑的系统对不上）"
+    exit $rc' sop-apt "$debs" "$@" </dev/null || rc=$?
+  case $rc in
+    0) ;;
+    75) die "$* 没装上：$APT_LOCKED" ;;
+    *) die "$* 没装上（密码不对、这个账号不能用 sudo，或者离线包里的软件包和这台电脑的系统对不上；退出码 $rc）" ;;
+  esac
   say "$* 装好了（用的是离线包里的软件包）"
 }
 

@@ -12,8 +12,10 @@
 整个 M2、出口检查、中途断了接着做，由 sop machine setup（3-12）串起来；这里只管装。
 本模块也能直接跑（3-12 做好之前虚拟机验证用）：python3 -m machine.install [工具名…]（不给名字就是 MINE 那几样，不要密码）
 """
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 from kernel import paths
 from . import catalog, config, shellenv
@@ -21,6 +23,18 @@ from . import catalog, config, shellenv
 MINE = ('uv', 'nvm', 'node', 'pnpm', 'gh')     # 3-08 装的几样，不要管理员密码
 DOCKER = ('uidmap', 'dbus-user-session', 'docker')   # 3-09：免管理员 Docker 和它要的系统软件包
 SUDO_PROMPT = '[sudo] 请输入 %u 的登录密码：'
+APT_SH = Path(__file__).resolve().parent / 'install' / 'apt.sh'    # 等住软件包的锁那一小段（3-56）
+APT_LOCKED = 75                                                   # apt.sh：等到期限，系统自己的软件更新还占着锁
+
+
+def apt_failure(rc):
+    """要管理员权限装系统软件包那一步没成：按退出码说一句大白话（75 等不到锁、100 apt 报错、别的多半是 sudo 没过）。"""
+    if rc == APT_LOCKED:
+        return ('系统正在自己更新软件，等了好几分钟还没做完（刚开机、或很久没开机时常有）。'
+                '不是你做错了什么：过一会儿再执行一次同样的命令就行')
+    if rc == 100:
+        return f'系统装软件的程序报错了（多半是连不上软件源，看上面的报错；退出码 {rc}）'
+    return f'密码不对、这个账号不能用 sudo，或者不是在终端里运行的（退出码 {rc}）'
 
 
 def script_env(tools_dir=None, net=None, base=None):
@@ -50,14 +64,14 @@ def install_apt(tools, *, net=None, run=subprocess.run, out=None):
     print(f'接下来用系统的软件包装 {"、".join(pkgs)}（{"；".join(t.what for t in tools)}），要管理员权限。\n'
           '系统会问这台电脑的登录密码（就是开机登录用的那个），输入时屏幕上什么都不显示，输完按回车。', flush=True)
     proxies = [f'{k}={v}' for k, v in config.proxy_env(net).items() if k.islower()]
-    # 刚开机时系统可能正在自己更新、占着软件包的锁：等它最多 5 分钟
-    cmd = ['sudo', '-p', SUDO_PROMPT, 'env', *proxies, 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_SUSPEND=1', 'sh', '-c',
-           'apt-get -o DPkg::Lock::Timeout=300 update -qq && '
-           'apt-get -o DPkg::Lock::Timeout=300 install -y -qq --no-install-recommends "$@" >/dev/null', 'sop-apt', *pkgs]
+    wait = [f'SOP_APT_WAIT={os.environ["SOP_APT_WAIT"]}'] if os.environ.get('SOP_APT_WAIT') else []
+    # 刚开机时系统可能正在自己更新、占着软件包的锁：apt.sh 里的 sop_apt 等它（3-56）
+    cmd = ['sudo', '-p', SUDO_PROMPT, 'env', *proxies, *wait, 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_SUSPEND=1', 'sh', '-c',
+           APT_SH.read_text() + '\nsop_apt update -qq && sop_apt install -y -qq --no-install-recommends "$@"\n',
+           'sop-apt', *pkgs]
     p = run(cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT if out else None)
     if p.returncode != 0:
-        return False, (f'系统软件包 {"、".join(pkgs)} 没装上（密码不对、这个账号不能用 sudo、不是在终端里运行的，'
-                       f'或者连不上软件源；退出码 {p.returncode}）')
+        return False, f'系统软件包 {"、".join(pkgs)} 没装上：{apt_failure(p.returncode)}'
     return True, f'系统软件包 {"、".join(pkgs)} 装好了'
 
 

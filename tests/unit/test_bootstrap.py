@@ -115,6 +115,26 @@ esac''')
         self.assertNotEqual(r.returncode, 0)
         self.assertIn('没装上', r.stderr)
 
+    def test_apt_waits_for_lock(self):
+        """3-56：等住软件包的锁那一段和 machine/install/apt.sh 一字不差；系统一直占着锁时说清楚，不说「密码不对」。"""
+        r = self.func('printf %s "$SOP_APT_SH"')
+        self.assertEqual(r.stdout, (REPO / 'machine/install/apt.sh').read_text().rstrip('\n'))
+        self.assertNotIn('-o DPkg::Lock::Timeout', SCRIPT.read_text())
+        self.fake('sudo', 'shift 2; exec "$@"')
+        self.fake('apt-get', 'echo "apt-get $*" >> "$FAKE_LOG"; echo "E: Could not get lock /var/lib/apt/lists/lock. It is held by process 9 (apt-get)" >&2; exit 100')
+        self.fake('sleep', 'exit 0')
+        nogit = self.tmp / 'nogit'
+        nogit.mkdir()
+        (nogit / 'curl').symlink_to('/usr/bin/true')
+        for name in ('sh', 'env', 'date', 'cat', 'mktemp', 'chmod', 'mkdir', 'rm', 'printf'):
+            if pathlib.Path('/usr/bin', name).exists():
+                (nogit / name).symlink_to(pathlib.Path('/usr/bin', name))
+        r = self.func(f'PROXY=; NOPROXY=; PATH="{self.bin}:{nogit}"; install_apt', SOP_APT_WAIT='0')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('系统正在自己更新软件', r.stderr)
+        self.assertNotIn('密码不对', r.stderr)
+        self.assertEqual(self.log.read_text().count('apt-get update'), 1)
+
     def test_not_supported_system(self):
         self.osr.write_text('ID=ubuntu\nVERSION_ID="24.04"\n')
         r = subprocess.run(['bash', str(SCRIPT), '--repo', '/nonexistent', '--yes'], capture_output=True, text=True, env=self.env())

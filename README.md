@@ -14,11 +14,11 @@
 | `flows/` | 流程定义（TOML） |
 | `checks/` | 检查库，每个检查附「应通过」和「应报错」的样例 |
 | `prompts/` | 任务包模板 |
-| `machine/` | 机器层：基础工具清单 `tools.toml`、机器级配置和登记（`~/tools/sop/config/` 下的网络设置、工具位置、系统组件版本）、体检（分区判断、剩余空间、系统组件版本、工具在不在规定位置、AI 工具，`sop machine doctor`）、M6 隔离自检（本机那份加专用 Docker 那份，通过后记登记）和系统升级后推进流程之前先重跑（`syscheck.py`）、M7 各 AI 工具全局规则文件里的受管段落（`globalrules.py`，原文 `global-rules.md`）、离线包（`offline/`：在能上网的电脑上 `pack.sh` 打成一个文件，断网的电脑上 `bash <文件>` 走第零步）、M2 安装 uv、nvm、Node、pnpm、gh、免管理员的 Docker 和它要的系统软件包（`install/` 下的安装脚本、`install.py`，终端启动文件里那一段和缓存目录 `shellenv.py`）、`sop machine` 命令 |
+| `machine/` | 机器层：基础工具清单 `tools.toml`、机器级配置和登记（`~/tools/sop/config/` 下的网络设置、工具位置、系统组件版本）、体检（分区判断、剩余空间、系统组件版本、工具在不在规定位置、AI 工具，`sop machine doctor`）、M6 隔离自检（本机那份加专用 Docker 那份，通过后记登记）和系统升级后推进流程之前先重跑（`syscheck.py`）、M7 各 AI 工具全局规则文件里的受管段落（`globalrules.py`，原文 `global-rules.md`）、离线包（`offline/`：在能上网的电脑上 `pack.sh` 打成一个文件，断网的电脑上 `bash <文件>` 走第零步）、M2 安装 uv、nvm、Node、pnpm、gh、免管理员的 Docker 和它要的系统软件包（`install/` 下的安装脚本、`install.py`；装系统软件包时等住软件包的锁的那一小段 `install/apt.sh`，第零步里抄了一份；终端启动文件里那一段和缓存目录 `shellenv.py`）、`sop machine` 命令 |
 | `adapters/ai/` | AI 工具适配器（目前只有测试用的 `fake`） |
 | `profiles/` | 技术栈、端、部署档案（目前只有测试用的） |
 | `templates/` | 新项目仓库的初始文件、wt 用的模板 |
-| `tests/` | 自测：单元测试、流程沙箱、假的 `gh`；`tests/vm/` 是验证用的虚拟机脚本（按名字现建、一键还原；`m2.sh`、`docker.sh` 在虚拟机里验 M2 安装，`m6m7.sh` 验 M6、M7，`m0.sh` 验第零步，`offline.sh` 验离线包，`dockersvc.sh` 验专用 Docker 的服务和分组，`dockeridle.sh` 验它用时才起、闲了停，`twoproj.sh` 验两个项目同时开（3-19）；不在 `run_all.py` 里） |
+| `tests/` | 自测：单元测试、流程沙箱、假的 `gh`；`tests/vm/` 是验证用的虚拟机脚本（按名字现建、一键还原；`m2.sh`、`docker.sh` 在虚拟机里验 M2 安装，`m6m7.sh` 验 M6、M7，`m0.sh` 验第零步，`offline.sh` 验离线包，`dockersvc.sh` 验专用 Docker 的服务和分组，`dockeridle.sh` 验它用时才起、闲了停，`twoproj.sh` 验两个项目同时开（3-19），`aptlock.sh` 验系统正在自己更新软件时装系统软件包会等它（3-56）；不在 `run_all.py` 里） |
 | `docs/` | 设计书、审查记录、试验记录 |
 
 ## 跑自测

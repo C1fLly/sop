@@ -167,7 +167,8 @@ def tool_entry(*, path, version, kind='base', in_place=True, others=None, **extr
             'others': list(others or []), 'checked_at': now(), **extra}
 
 
-KEEP_ON_RECHECK = ('drilled_version',)   # 别处写的项（真实 AI 演练写的版本，10.1），体检重新登记时留着
+# 别处写的项，体检重新登记时留着：真实 AI 演练写的版本（10.1）；适配器自检（probe）写的「真的答得上来的版本」和时间（3-27）
+KEEP_ON_RECHECK = ('drilled_version', 'drilled_at', 'probed_version', 'probed_at', 'probe_ok')
 
 
 def record_tools(entries):

@@ -1,0 +1,23 @@
+{
+ "carried_from_phase2": 21.29,
+ "entries": [
+  {
+   "what": "3-27 probe：最短的一次调用",
+   "tool": "claude 2.1.329",
+   "cost": 0.0423235,
+   "basis": "工具报告",
+   "secs": 5,
+   "rc": 0,
+   "date": "2026-11-21"
+  },
+  {
+   "what": "3-27 run_headless：最小任务包（读 README、写结果文件）",
+   "tool": "claude 2.1.329",
+   "cost": 0.023399500000000004,
+   "basis": "工具报告",
+   "secs": 10,
+   "rc": 0,
+   "date": "2026-11-21"
+  }
+ ]
+}

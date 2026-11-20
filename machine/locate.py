@@ -232,8 +232,8 @@ def _run_version(cmd, tmp, timeout):
     return p.returncode, out, err
 
 
-def tool_version(exe, timeout=30, bwrap=None):
-    """跑 `<exe> --version`，返回 (版本文字或 None, 输出)。在临时 HOME 里跑，跑完删掉。
+def quiet_run(exe, *args, timeout=30, bwrap=None):
+    """跑 `<exe> <参数>`，返回 (退出码或 None, 输出, 报错)。在临时 HOME 里跑，跑完删掉；不带任何密钥。
     有 bubblewrap 时套一层：整个系统只读、只有临时 HOME 能写（实测 Pi 查版本时会动它自己安装目录里的东西）。
     bubblewrap 还没装（新电脑上体检在安装之前）或者起不来时，不套，照样在临时 HOME 里跑。"""
     bwrap = shutil.which('bwrap') if bwrap is None else bwrap
@@ -241,12 +241,18 @@ def tool_version(exe, timeout=30, bwrap=None):
         rc = out = err = None
         if bwrap:
             rc, out, err = _run_version([bwrap, '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc',
-                                         '--bind', tmp, tmp, '--die-with-parent', '--', exe, '--version'], tmp, timeout)
+                                         '--bind', tmp, tmp, '--die-with-parent', '--', exe, *args], tmp, timeout)
             if rc is not None and rc != 0 and err.lstrip().startswith('bwrap:'):
                 rc = None    # 是 bubblewrap 自己起不来，不是工具的问题：不套再跑一次
                 err = ''
         if rc is None and not err:
-            rc, out, err = _run_version([exe, '--version'], tmp, timeout)
+            rc, out, err = _run_version([exe, *args], tmp, timeout)
+    return rc, out or '', err or ''
+
+
+def tool_version(exe, timeout=30, bwrap=None):
+    """跑 `<exe> --version`，返回 (版本文字或 None, 输出)。怎么跑见 quiet_run。"""
+    rc, out, err = quiet_run(exe, '--version', timeout=timeout, bwrap=bwrap)
     if rc is None:
         return None, err
     text = (out + err).strip()

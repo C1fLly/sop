@@ -8,7 +8,7 @@ import os
 import pathlib
 import shutil
 
-from adapters.ai.base import Adapter, Outcome
+from adapters.ai.base import Adapter, Outcome, ProbeResult
 from runner import placement, sandbox
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -23,7 +23,7 @@ class FakeAdapter(Adapter):
         (state_dir / 'settings.json').write_text(json.dumps({'trusted': [str(workdir)]}))
 
     def probe(self):
-        return True, '假 AI：总是能用'
+        return ProbeResult(True, '假 AI：总是能用', version='fake')
 
     def _action(self, key_scope, step, attempt):
         f = os.environ.get('SOP_FAKE_SCRIPT')

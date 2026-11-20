@@ -55,12 +55,18 @@ def nul(s):
 
 
 def finish(ok, line, report, report_path=None, unsure=False):
-    """统一的收尾：一行结论、JSON 报告、退出码（14.1）。"""
+    """统一的收尾：一行结论、JSON 报告、退出码（14.1）。
+    报告里写上这次的退出码和一行结论（「退出码」「结论」两项）：总检查只认检查自己写出的结论，
+    光是退出码 1 可能是脚本崩了（Python 没兜住的错退出码也是 1），不能冒充发现了问题（16.1）。"""
+    rc = 2 if unsure else (0 if ok else 1)
     print(line)
     if report_path:
+        out = dict(report) if isinstance(report, dict) else {'报告': report}
+        out['退出码'], out['结论'] = rc, line
+        text = json.dumps(out, ensure_ascii=False, indent=1)   # 先整个转好再写：转不了就崩在写文件之前，不留半截报告
         with open(report_path, 'w', encoding='utf-8') as f:
-            json.dump(report, f, ensure_ascii=False, indent=1)
-    return 2 if unsure else (0 if ok else 1)
+            f.write(text)
+    return rc
 
 
 def cli(run):

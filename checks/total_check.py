@@ -3,6 +3,8 @@
 - 没有「应通过」或「应报错」样例的检查不合格；
 - 「应通过」的样例上没通过（退出码不是 0）、「应报错」的样例上没报错（退出码不是 1）的，不合格。
   （退出码 2「无法判断」在「应报错」的样例上也不算报对了：检查自己崩了不能冒充发现了问题。）
+- 只看退出码不够：Python 没兜住的错（例如一导入就崩、写报告时崩）退出码也是 1。所以还要看到检查自己写出的结论：
+  报告 JSON 读得出、是对象、里面记的「退出码」和进程的退出码一样（checks/lib.py 的 finish 写的）；不然算检查自己崩了，不符合。
 每个样例在 /tmp 下的临时副本里跑；有 setup.sh 的先执行它造现场；args.json 里的 {CASE} 换成临时副本的位置。"""
 import json
 import os
@@ -28,8 +30,17 @@ def run_sample(check_py, sample, tmp_root):
             return None, f'造现场失败：{p.stderr.strip()[-400:]}'
     args = (case / 'args.json').read_text(encoding='utf-8').replace('{CASE}', str(case)).replace('{TOOLKIT}', str(HERE.parent))
     (case / 'args.run.json').write_text(args, encoding='utf-8')
-    p = subprocess.run([sys.executable, str(check_py), str(case / 'args.run.json'), '--report', str(case / 'report.json')],
+    rp = case / 'report.json'
+    rp.unlink(missing_ok=True)   # 样例里带的、造现场时写的都不算，只认这次检查自己写的
+    p = subprocess.run([sys.executable, str(check_py), str(case / 'args.run.json'), '--report', str(rp)],
                        env=env, capture_output=True, text=True, timeout=120)
+    try:
+        said = json.loads(rp.read_text(encoding='utf-8')).get('退出码')
+    except (OSError, ValueError, AttributeError):
+        said = None
+    if said != p.returncode or isinstance(said, bool):
+        why = '没写出报告' if not rp.exists() else ('报告里记的退出码是 %r' % (said,) if said is not None else '报告读不出或没记退出码')
+        return None, f'检查自己崩了（进程退出码 {p.returncode}，{why}）：' + (p.stderr.strip() or p.stdout.strip())[-300:]
     return p.returncode, (p.stdout.strip() or p.stderr.strip())[-300:]
 
 

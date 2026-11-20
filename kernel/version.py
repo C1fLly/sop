@@ -113,7 +113,7 @@ def upgrade(p, target, human):
     wt = name.replace('/', '-')
     p.fetch('main')
     if not (p.root / wt).is_dir():
-        p.wt('new', name, 'origin/main')
+        p.wt_new(name, 'origin/main')
     w = p.root / wt
     # 特权侧自己生成的内容：新的 sop.json；同步检查流程（和新版本工具包里的逐字一致）
     sop2 = dict(sop, toolkit={**sop['toolkit'], 'version': target})
@@ -145,7 +145,7 @@ def upgrade(p, target, human):
         ans = human.ask('project', 'upgrade', f'升级的 PR 检查都过了，请到网页上点合并：{steps.pr_view(eng, n)["url"]}', {'choices': ['点好了']})
         if ans.get('answer') != '点好了':
             raise SopError('还没在网页上点合并')
-    p.wt('done', name)
+    p.wt_remove(name)
     if f:   # 修补版在功能进行中换上：主线合进功能分支，进行中的工单分支跟上
         p.fetch('main', f.branch)
         steps.ff_feature(eng, f)

@@ -106,7 +106,7 @@ def feature_drop(p, yes):
         if n and steps.pr_view(eng, n)['state'] == 'OPEN':
             p.gh('pr', 'close', str(n), '--delete-branch')
         if (p.root / f.wt).is_dir():
-            p.wt('rm', f.branch)
+            p.wt_remove(f.branch, done=False)
         p.journal.append(J.event(f.scope, None, 'drop', reason='小白放弃了这个功能'),
                          J.event('project', None, 'note', kind='功能放弃', feature=f.name))
         p.journal.close()

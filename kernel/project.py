@@ -8,7 +8,7 @@ import tomllib
 
 from checks.protected import core as protected_core
 
-from . import flowdef, paths, precheck
+from . import flowdef, paths, precheck, wtx
 from .errors import SopError
 from .gitx import Git, clean_env
 from .journal import Journal
@@ -64,23 +64,29 @@ class Project:
     def protected_patterns(self, sop=None):
         return protected_core.patterns_for(str(self.toolkit), sop or self.sop_json(fetch=False))
 
-    # ---------- wt ----------
+    # ---------- wt（接入层 kernel/wtx.py：核对、WT_TEMPLATE、重记指纹都在那里） ----------
     def worktrees(self):
-        return sorted(p.name for p in self.root.iterdir() if (p / '.git').is_file())
+        return wtx.worktrees(self.root)
 
     def wt(self, *args, cwd=None, check=True):
-        """调用 wt。之前核对特权侧要用的文件（6.4 第四层），之后重新记下 .git/config 的指纹。
-        一律用工具包自己的模板（WT_TEMPLATE，5.6）；用环境变量再把 Git 钩子关一次（wt 自己调 git 时也生效）。"""
+        """调用 wt 的其余命令（pr、sync 等）。特权侧改公共 .git 的操作一次一个。"""
         with self.gitlock:
-            precheck.verify(self.name, self.root, self.worktrees())
-            env = clean_env({'WT_TEMPLATE': str(TOOLKIT / 'templates' / 'wt'), 'GIT_CONFIG_COUNT': '1',
-                             'GIT_CONFIG_KEY_0': 'core.hooksPath', 'GIT_CONFIG_VALUE_0': '/dev/null', 'GH_REPO': self.slug()})
-            p = subprocess.run(['wt', *args, '--yes'], cwd=cwd or self.root, env=env, capture_output=True, text=True,
-                               stdin=subprocess.DEVNULL)
-            precheck.record(self.name, self.root)
-        if check and p.returncode:
-            raise SopError(f'wt {" ".join(args)} 失败：{(p.stderr or p.stdout).strip()[-600:]}')
-        return p
+            return wtx.call(self.name, self.root, *args, cwd=cwd, slug=self.slug(), check=check)
+
+    def wt_new(self, branch, start=None):
+        """建目录（wt new）。"""
+        with self.gitlock:
+            return wtx.new(self.name, self.root, branch, start, slug=self.slug())
+
+    def wt_remove(self, branch, done=True):
+        """删目录：done=True 用 wt done，False 用 wt rm。"""
+        with self.gitlock:
+            return wtx.remove(self.name, self.root, branch, done=done, slug=self.slug())
+
+    def wt_set_base(self, branch, target):
+        """登记基准（写回 wt 的登记）。"""
+        with self.gitlock:
+            wtx.set_base(self.name, self.root, branch, target)
 
     # ---------- gh ----------
     def gh(self, *args, check=True, as_json=False):

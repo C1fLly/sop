@@ -3,7 +3,7 @@
 - 工具包的「公开仓库」：一个本机裸仓库，提交的是当前开发目录的快照（不含 docs/），再把测试用的档案 fake 放进 profiles/。
   版本就是这个提交的编号；可以再提交几个变体（修补版、大版本），用来演工具包升级（W18）。
 - 项目的远程：本机裸仓库，main 上是新项目的初始内容（templates/project 加 sop.json 等），另有日志分支。
-- 项目根：用 wt init --url 建（带 WT_TEMPLATE 指向工具包的模板），和真的一样是裸仓库加工作目录。
+- 项目根：经 wt 接入层（kernel/wtx.py）用 wt init --url 建（带 WT_TEMPLATE 指向工具包的模板），和真的一样是裸仓库加工作目录。
 - 剧本：假 AI（SOP_FAKE_SCRIPT）、档案 fake 的门禁（SOP_FAKE_GATE）、人的回答（SOP_HUMAN_SCRIPT）、假 gh 的检查结果（rules.json）、
   假的隔离自检（SOP_FAKE_SELFTEST，3-07；没给剧本时一跑就报错）。
 - 这台「电脑」的隔离自检已经通过过：系统组件现在的版本先记进登记（config/system.json），所以平常 sop 不会自检；
@@ -17,6 +17,7 @@ import signal
 import subprocess
 import sys
 
+from kernel import wtx
 from machine import components, config
 from tests.helpers import REPO, mock_env, sh
 
@@ -129,10 +130,8 @@ class World:
         (self.fakegh / 'db.json').write_text(json.dumps({'clock': 0, 'remote': str(self.remote), 'slug': f'tester/{self.name}',
                                                          'visibility': self.visibility, 'prs': {}, 'runs': [], 'next_pr': 1, 'next_run': 1}))
         self.root.parent.mkdir(parents=True, exist_ok=True)
-        p = subprocess.run(['wt', 'init', f'tester/{self.name}', '--url', str(self.remote), '--dir', str(self.root), '--no-hook', '--yes'],
-                           env={**self.env(), 'WT_TEMPLATE': str(REPO / 'templates' / 'wt')}, capture_output=True, text=True)
-        if p.returncode:
-            raise RuntimeError(f'wt init 失败：{p.stdout}\n{p.stderr}')
+        with mock_env(self.env()):     # 和真的一样经 wt 接入层建（带 WT_TEMPLATE 指向工具包的模板，建完记下 .git/config 的指纹，3-21）
+            wtx.init(self.name, self.root, f'tester/{self.name}', self.remote, hook=False)
         (self.root / '.shared' / '.env').write_text('DB_URL=本机开发用\n')
         # 项目初始化里由特权侧做的几样（I6 建日志分支、记下 .git/config 的指纹）：第三段的 sop project new 正式做
         r = self.kernel('init-project')

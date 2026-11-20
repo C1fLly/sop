@@ -373,7 +373,7 @@ def f_open(eng, f, sc, step, attempt, pos):
     p = eng.p
     p.fetch('main')
     if not (p.root / f.wt).is_dir():
-        p.wt('new', f.branch, 'origin/main')
+        p.wt_new(f.branch, 'origin/main')
     head = push(eng, f.branch)
     eng.p.journal.append(J.event(f.scope, 'F1', 'register', what='branch', branch=f.branch, base='main', worktree=f.wt))
     return R(True, payload={'head': head})
@@ -528,7 +528,7 @@ def f_merge(eng, f, sc, step, attempt, pos):
 def f_cleanup(eng, f, sc, step, attempt, pos):
     p = eng.p
     if (p.root / f.wt).is_dir():
-        p.wt('done', f.branch)
+        p.wt_remove(f.branch)
     ports.release(p.name, f.wt)
     return R(True)
 
@@ -604,7 +604,7 @@ def t_open(eng, f, t, step, attempt, pos):
     p = eng.p
     p.fetch(f.branch)
     if not (p.root / t.wt).is_dir():
-        p.wt('new', t.branch, f'origin/{f.branch}')
+        p.wt_new(t.branch, f'origin/{f.branch}')
     pr = ports.allocate(p.name, t.wt)
     prof = p.profile()
     if prof and prof['commands'].get('setup'):   # 依赖由流程命令在受限侧装，不交给 wt 的准备脚本（5.6）
@@ -744,7 +744,7 @@ def t_merge(eng, f, t, step, attempt, pos):
 def t_cleanup(eng, f, t, step, attempt, pos):
     p = eng.p
     if (p.root / t.wt).is_dir():
-        p.wt('done', t.branch)
+        p.wt_remove(t.branch)
     ports.release(p.name, t.wt)
     return R(True)
 
@@ -756,7 +756,7 @@ def drop_ticket(eng, f, t, why):
     if n and pr_view(eng, n)['state'] == 'OPEN':
         p.gh('pr', 'close', str(n), '--delete-branch')
     if (p.root / t.wt).is_dir():
-        p.wt('rm', t.branch)
+        p.wt_remove(t.branch, done=False)
     ports.release(p.name, t.wt)
     p.journal.append(J.event(t.scope, None, 'drop', reason=why))
 

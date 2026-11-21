@@ -1,0 +1,134 @@
+[
+    {
+        "Id": "sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+        "RepoTags": [
+            "busybox:1.36"
+        ],
+        "RepoDigests": [
+            "busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"
+        ],
+        "Created": "2023-05-18T22:34:17Z",
+        "Config": {
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "sh"
+            ]
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 6758127,
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:97e4ece8f8a4d01b66df2c55c1f1e8a2860597b54dffbbc0df2f9942062cb34d"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-11-21T05:52:06.005992339Z"
+        },
+        "Descriptor": {
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "digest": "sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+            "size": 9535
+        },
+        "Identity": {
+            "Pull": [
+                {
+                    "Repository": "docker.io/library/busybox"
+                }
+            ]
+        }
+    },
+    {
+        "Id": "sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc",
+        "RepoTags": [
+            "alpine:3.20"
+        ],
+        "RepoDigests": [
+            "alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
+        ],
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-04-16T23:53:26.803599608Z",
+        "Config": {
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "/bin/sh"
+            ],
+            "WorkingDir": "/"
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 12102484,
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:08bc4e534116aa76b16015484b82eac51f9a593416feae9296c8a2d4bb7aa4a2"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-11-21T05:52:09.174875734Z"
+        },
+        "Descriptor": {
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "digest": "sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc",
+            "size": 9226
+        },
+        "Identity": {
+            "Pull": [
+                {
+                    "Repository": "docker.io/library/alpine"
+                }
+            ]
+        }
+    },
+    {
+        "Architecture": "amd64",
+        "Config": {
+            "Cmd": [
+                "sh",
+                "-c",
+                "echo 笔记 > /notes/a.txt; dd if=/dev/zero of=/big bs=1M count=3 2>/dev/null; echo x > /scratch/y"
+            ],
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Labels": {
+                "com.docker.compose.project": "shop"
+            },
+            "Volumes": {
+                "/scratch": {}
+            },
+            "WorkingDir": "/"
+        },
+        "Created": "2026-11-21T05:52:09.763546435Z",
+        "Descriptor": {
+            "digest": "sha256:dd5f3b2a7eddacf87063a7fa58917b68dfc4e2ece2ed93ad924cdd18519c25bf",
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "size": 746
+        },
+        "Id": "sha256:dd5f3b2a7eddacf87063a7fa58917b68dfc4e2ece2ed93ad924cdd18519c25bf",
+        "Metadata": {
+            "LastTagTime": "2026-11-21T05:52:09.827193535Z"
+        },
+        "Os": "linux",
+        "Parent": "sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc",
+        "RepoDigests": [
+            "shop-web@sha256:dd5f3b2a7eddacf87063a7fa58917b68dfc4e2ece2ed93ad924cdd18519c25bf"
+        ],
+        "RepoTags": [
+            "shop-web:dev"
+        ],
+        "RootFS": {
+            "Layers": [
+                "sha256:08bc4e534116aa76b16015484b82eac51f9a593416feae9296c8a2d4bb7aa4a2",
+                "sha256:d64885bfdd159e183fbe6a51e0877f20747930210b2acdc32456f7e6ee424299"
+            ],
+            "Type": "layers"
+        },
+        "Size": 15287461
+    }
+]

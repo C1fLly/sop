@@ -1,0 +1,34 @@
+[
+    {
+        "CreatedAt": "2026-11-21T05:52:09Z",
+        "Driver": "local",
+        "Labels": {
+            "com.docker.volume.anonymous": ""
+        },
+        "Mountpoint": "/var/lib/docker/volumes/0e9e287818dff20762f2409a03425806418ab8c037b350b5ce603fc0b16f2611/_data",
+        "Name": "0e9e287818dff20762f2409a03425806418ab8c037b350b5ce603fc0b16f2611",
+        "Options": null,
+        "Scope": "local"
+    },
+    {
+        "CreatedAt": "2026-11-21T05:52:09Z",
+        "Driver": "local",
+        "Labels": null,
+        "Mountpoint": "/var/lib/docker/volumes/notes/_data",
+        "Name": "notes",
+        "Options": null,
+        "Scope": "local"
+    },
+    {
+        "CreatedAt": "2026-11-21T05:52:09Z",
+        "Driver": "local",
+        "Labels": {
+            "com.docker.compose.project": "shop",
+            "com.docker.compose.volume": "pgdata"
+        },
+        "Mountpoint": "/var/lib/docker/volumes/shop_pgdata/_data",
+        "Name": "shop_pgdata",
+        "Options": null,
+        "Scope": "local"
+    }
+]

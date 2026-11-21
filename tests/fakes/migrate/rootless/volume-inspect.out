@@ -1,0 +1,34 @@
+[
+    {
+        "CreatedAt": "2026-11-21T05:53:21Z",
+        "Driver": "local",
+        "Labels": {
+            "com.docker.volume.anonymous": ""
+        },
+        "Mountpoint": "/home/xiaobai/.local/share/docker/volumes/defcacf053fe10265177429061b31b2798fdef587c9600cc1cc40be77dfb4a8c/_data",
+        "Name": "defcacf053fe10265177429061b31b2798fdef587c9600cc1cc40be77dfb4a8c",
+        "Options": null,
+        "Scope": "local"
+    },
+    {
+        "CreatedAt": "2026-11-21T05:53:20Z",
+        "Driver": "local",
+        "Labels": null,
+        "Mountpoint": "/home/xiaobai/.local/share/docker/volumes/notes/_data",
+        "Name": "notes",
+        "Options": null,
+        "Scope": "local"
+    },
+    {
+        "CreatedAt": "2026-11-21T05:53:20Z",
+        "Driver": "local",
+        "Labels": {
+            "com.docker.compose.project": "shop",
+            "com.docker.compose.volume": "pgdata"
+        },
+        "Mountpoint": "/home/xiaobai/.local/share/docker/volumes/shop_pgdata/_data",
+        "Name": "shop_pgdata",
+        "Options": null,
+        "Scope": "local"
+    }
+]

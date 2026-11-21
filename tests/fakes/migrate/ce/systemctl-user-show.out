@@ -1,0 +1,6 @@
+Id=docker.service
+LoadState=not-found
+ActiveState=inactive
+FragmentPath=
+DropInPaths=
+UnitFileState=

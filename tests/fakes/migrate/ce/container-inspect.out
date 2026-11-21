@@ -1,0 +1,451 @@
+[
+    {
+        "Id": "db2a103ed4b4dc5aeb2b5bc13fde91c876f5a0adf629f256da0dd468d7563164",
+        "Created": "2026-11-21T05:52:09.48744618Z",
+        "Path": "sh",
+        "Args": [
+            "-c",
+            "echo 笔记 > /notes/a.txt; dd if=/dev/zero of=/big bs=1M count=3 2>/dev/null; echo x > /scratch/y"
+        ],
+        "State": {
+            "Status": "exited",
+            "Running": false,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 0,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-11-21T05:52:09.557205883Z",
+            "FinishedAt": "2026-11-21T05:52:09.634652657Z"
+        },
+        "Image": "sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc",
+        "ResolvConfPath": "/var/lib/docker/containers/db2a103ed4b4dc5aeb2b5bc13fde91c876f5a0adf629f256da0dd468d7563164/resolv.conf",
+        "HostnamePath": "/var/lib/docker/containers/db2a103ed4b4dc5aeb2b5bc13fde91c876f5a0adf629f256da0dd468d7563164/hostname",
+        "HostsPath": "/var/lib/docker/containers/db2a103ed4b4dc5aeb2b5bc13fde91c876f5a0adf629f256da0dd468d7563164/hosts",
+        "LogPath": "/var/lib/docker/containers/db2a103ed4b4dc5aeb2b5bc13fde91c876f5a0adf629f256da0dd468d7563164/db2a103ed4b4dc5aeb2b5bc13fde91c876f5a0adf629f256da0dd468d7563164-json.log",
+        "Name": "/old-tool",
+        "RestartCount": 0,
+        "Driver": "overlayfs",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "docker-default",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "notes:/notes"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "json-file",
+                "Config": {}
+            },
+            "NetworkMode": "bridge",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "no",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": [],
+            "DnsOptions": [],
+            "DnsSearch": [],
+            "ExtraHosts": null,
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 0,
+            "NanoCpus": 0,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": [],
+            "BlkioDeviceReadBps": [],
+            "BlkioDeviceWriteBps": [],
+            "BlkioDeviceReadIOps": [],
+            "BlkioDeviceWriteIOps": [],
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": [],
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 0,
+            "MemorySwap": 0,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": null,
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/acpi",
+                "/proc/asound",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/sys/devices/virtual/powercap",
+                "/sys/firmware"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "Storage": {
+            "RootFS": {
+                "Snapshot": {
+                    "Name": "overlayfs"
+                }
+            }
+        },
+        "SizeRw": 3158016,
+        "SizeRootFs": 11649024,
+        "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "notes",
+                "Source": "/var/lib/docker/volumes/notes/_data",
+                "Destination": "/notes",
+                "Driver": "local",
+                "Mode": "z",
+                "RW": true,
+                "Propagation": ""
+            },
+            {
+                "Type": "volume",
+                "Name": "0e9e287818dff20762f2409a03425806418ab8c037b350b5ce603fc0b16f2611",
+                "Source": "/var/lib/docker/volumes/0e9e287818dff20762f2409a03425806418ab8c037b350b5ce603fc0b16f2611/_data",
+                "Destination": "/scratch",
+                "Driver": "local",
+                "Mode": "",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+        "Config": {
+            "Hostname": "db2a103ed4b4",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "sh",
+                "-c",
+                "echo 笔记 > /notes/a.txt; dd if=/dev/zero of=/big bs=1M count=3 2>/dev/null; echo x > /scratch/y"
+            ],
+            "Image": "alpine:3.20",
+            "Volumes": {
+                "/scratch": {}
+            },
+            "WorkingDir": "/",
+            "Entrypoint": null,
+            "Labels": {}
+        },
+        "NetworkSettings": {
+            "SandboxID": "",
+            "SandboxKey": "",
+            "Ports": {},
+            "Networks": {
+                "bridge": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "16de3e261602e96e897cc8bb757cb9eb58e5a4300d5bbca10704fceb11396d7b",
+                    "EndpointID": "",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "MacAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        },
+        "ImageManifestDescriptor": {
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "digest": "sha256:c64c687cbea9300178b30c95835354e34c4e4febc4badfe27102879de0483b5e",
+            "size": 1023,
+            "annotations": {
+                "com.docker.official-images.bashbrew.arch": "amd64",
+                "org.opencontainers.image.base.name": "scratch",
+                "org.opencontainers.image.created": "2026-04-16T23:53:23Z",
+                "org.opencontainers.image.revision": "0db70ae354ee747109ce0b9a0cfbcd3c907bc822",
+                "org.opencontainers.image.source": "https://github.com/alpinelinux/docker-alpine.git#0db70ae354ee747109ce0b9a0cfbcd3c907bc822:x86_64",
+                "org.opencontainers.image.url": "https://hub.docker.com/_/alpine",
+                "org.opencontainers.image.version": "3.20.10"
+            },
+            "platform": {
+                "architecture": "amd64",
+                "os": "linux"
+            }
+        }
+    },
+    {
+        "Id": "2d4c247076569a6e51413fbab3ff9d6a941473aeaf3802d69406b796ab94ce9e",
+        "Created": "2026-11-21T05:52:09.238938758Z",
+        "Path": "sh",
+        "Args": [
+            "-c",
+            "dd if=/dev/urandom of=/data/blob bs=1M count=12 2>/dev/null; chown -R 70:70 /data; sleep 1d"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 1533,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-11-21T05:52:31.374784653Z",
+            "FinishedAt": "2026-11-21T05:52:22.112497284Z"
+        },
+        "Image": "sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+        "ResolvConfPath": "/var/lib/docker/containers/2d4c247076569a6e51413fbab3ff9d6a941473aeaf3802d69406b796ab94ce9e/resolv.conf",
+        "HostnamePath": "/var/lib/docker/containers/2d4c247076569a6e51413fbab3ff9d6a941473aeaf3802d69406b796ab94ce9e/hostname",
+        "HostsPath": "/var/lib/docker/containers/2d4c247076569a6e51413fbab3ff9d6a941473aeaf3802d69406b796ab94ce9e/hosts",
+        "LogPath": "/var/lib/docker/containers/2d4c247076569a6e51413fbab3ff9d6a941473aeaf3802d69406b796ab94ce9e/2d4c247076569a6e51413fbab3ff9d6a941473aeaf3802d69406b796ab94ce9e-json.log",
+        "Name": "/shop-db-1",
+        "RestartCount": 0,
+        "Driver": "overlayfs",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "docker-default",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "shop_pgdata:/data"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "json-file",
+                "Config": {}
+            },
+            "NetworkMode": "bridge",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "unless-stopped",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": [],
+            "DnsOptions": [],
+            "DnsSearch": [],
+            "ExtraHosts": null,
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 0,
+            "NanoCpus": 0,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": [],
+            "BlkioDeviceReadBps": [],
+            "BlkioDeviceWriteBps": [],
+            "BlkioDeviceReadIOps": [],
+            "BlkioDeviceWriteIOps": [],
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": [],
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 0,
+            "MemorySwap": 0,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": null,
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/acpi",
+                "/proc/asound",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/sys/devices/virtual/powercap",
+                "/sys/firmware"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "Storage": {
+            "RootFS": {
+                "Snapshot": {
+                    "Name": "overlayfs"
+                }
+            }
+        },
+        "SizeRw": 8192,
+        "SizeRootFs": 4587520,
+        "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "shop_pgdata",
+                "Source": "/var/lib/docker/volumes/shop_pgdata/_data",
+                "Destination": "/data",
+                "Driver": "local",
+                "Mode": "z",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+        "Config": {
+            "Hostname": "2d4c24707656",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "sh",
+                "-c",
+                "dd if=/dev/urandom of=/data/blob bs=1M count=12 2>/dev/null; chown -R 70:70 /data; sleep 1d"
+            ],
+            "Image": "busybox:1.36",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": null,
+            "Labels": {
+                "com.docker.compose.project": "shop",
+                "com.docker.compose.service": "db"
+            }
+        },
+        "NetworkSettings": {
+            "SandboxID": "f33d06b810c281a3ce3b784ae2d2346e75778058d654a30cb3fe49260141083d",
+            "SandboxKey": "/var/run/docker/netns/f33d06b810c2",
+            "Ports": {},
+            "Networks": {
+                "bridge": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "82063b11b11145e7be9d58d4334ccd2a7424b94649d1e49762ae513f17f8ec1f",
+                    "EndpointID": "e8120cdb2d792a094f78a071de0520bcd90c8618a37f610234de051f85ddcbd0",
+                    "Gateway": "172.17.0.1",
+                    "IPAddress": "172.17.0.2",
+                    "MacAddress": "fa:92:cf:57:38:f9",
+                    "IPPrefixLen": 16,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        },
+        "ImageManifestDescriptor": {
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "digest": "sha256:b7f3d86d6e84fc17718c48bcde1450807faa2d56704205c697b4bd5df7b9e29f",
+            "size": 610,
+            "annotations": {
+                "com.docker.official-images.bashbrew.arch": "amd64",
+                "org.opencontainers.image.base.name": "scratch",
+                "org.opencontainers.image.created": "2026-03-18T22:39:12Z",
+                "org.opencontainers.image.revision": "c1375496373e76f680b1ef5f713500e98921a45c",
+                "org.opencontainers.image.source": "https://github.com/docker-library/busybox.git",
+                "org.opencontainers.image.url": "https://hub.docker.com/_/busybox",
+                "org.opencontainers.image.version": "1.36.1-glibc"
+            },
+            "platform": {
+                "architecture": "amd64",
+                "os": "linux"
+            }
+        }
+    }
+]

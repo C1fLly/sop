@@ -1,0 +1,7 @@
+Id=docker.service
+LoadState=loaded
+ActiveState=active
+FragmentPath=/home/xiaobai/.config/systemd/user/docker.service
+DropInPaths=/home/xiaobai/.config/systemd/user/docker.service.d/proxy.conf
+UnitFileState=enabled
+ExecStart={ path=/home/xiaobai/bin/dockerd-rootless.sh ; argv[]=/home/xiaobai/bin/dockerd-rootless.sh --iptables=false ; ignore_errors=no ; start_time=[Sat 2026-11-21 05:53:37 UTC] ; stop_time=[n/a] ; pid=1304 ; code=(null) ; status=0/0 }

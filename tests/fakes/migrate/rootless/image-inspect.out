@@ -1,0 +1,134 @@
+[
+    {
+        "Architecture": "amd64",
+        "Config": {
+            "Cmd": [
+                "sh",
+                "-c",
+                "echo 笔记 > /notes/a.txt; dd if=/dev/zero of=/big bs=1M count=3 2>/dev/null; echo x > /scratch/y"
+            ],
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Labels": {
+                "com.docker.compose.project": "shop"
+            },
+            "Volumes": {
+                "/scratch": {}
+            },
+            "WorkingDir": "/"
+        },
+        "Created": "2026-11-21T05:53:21.676090489Z",
+        "Descriptor": {
+            "digest": "sha256:23355312ac37393ad4506f88b7206f9f19dd790a821fd3c5f2fc165cc1aa0e77",
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "size": 746
+        },
+        "Id": "sha256:23355312ac37393ad4506f88b7206f9f19dd790a821fd3c5f2fc165cc1aa0e77",
+        "Metadata": {
+            "LastTagTime": "2026-11-21T05:53:21.750267261Z"
+        },
+        "Os": "linux",
+        "Parent": "sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc",
+        "RepoDigests": [
+            "shop-web@sha256:23355312ac37393ad4506f88b7206f9f19dd790a821fd3c5f2fc165cc1aa0e77"
+        ],
+        "RepoTags": [
+            "shop-web:dev"
+        ],
+        "RootFS": {
+            "Layers": [
+                "sha256:08bc4e534116aa76b16015484b82eac51f9a593416feae9296c8a2d4bb7aa4a2",
+                "sha256:96a55ca62272398fa77004c1d479e26b6c371cdb4854dacd32a097d543ebf1e5"
+            ],
+            "Type": "layers"
+        },
+        "Size": 15287461
+    },
+    {
+        "Id": "sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+        "RepoTags": [
+            "busybox:1.36"
+        ],
+        "RepoDigests": [
+            "busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"
+        ],
+        "Created": "2023-05-18T22:34:17Z",
+        "Config": {
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "sh"
+            ]
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 6758127,
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:97e4ece8f8a4d01b66df2c55c1f1e8a2860597b54dffbbc0df2f9942062cb34d"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-11-21T05:53:17.662035283Z"
+        },
+        "Descriptor": {
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "digest": "sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+            "size": 9535
+        },
+        "Identity": {
+            "Pull": [
+                {
+                    "Repository": "docker.io/library/busybox"
+                }
+            ]
+        }
+    },
+    {
+        "Id": "sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc",
+        "RepoTags": [
+            "alpine:3.20"
+        ],
+        "RepoDigests": [
+            "alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
+        ],
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-04-16T23:53:26.803599608Z",
+        "Config": {
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "/bin/sh"
+            ],
+            "WorkingDir": "/"
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 12102484,
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:08bc4e534116aa76b16015484b82eac51f9a593416feae9296c8a2d4bb7aa4a2"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-11-21T05:53:20.893535182Z"
+        },
+        "Descriptor": {
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "digest": "sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc",
+            "size": 9226
+        },
+        "Identity": {
+            "Pull": [
+                {
+                    "Repository": "docker.io/library/alpine"
+                }
+            ]
+        }
+    }
+]

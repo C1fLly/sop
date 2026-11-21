@@ -1,0 +1,10 @@
+containerd		un 
+containerd.io	2.4.2-4~ubuntu.26.04~resolute	ii 
+docker-buildx-plugin	0.39.1-1~ubuntu.26.04~resolute	ii 
+docker-ce	5:29.10.0-1~ubuntu.26.04~resolute	ii 
+docker-ce-cli	5:29.10.0-1~ubuntu.26.04~resolute	ii 
+docker-ce-rootless-extras	5:29.10.0-1~ubuntu.26.04~resolute	ii 
+docker-compose-plugin	5.8.0-1~ubuntu.26.04~resolute	ii 
+docker-model-plugin		un 
+docker.io		un 
+runc		un 

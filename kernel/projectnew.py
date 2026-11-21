@@ -27,7 +27,7 @@ from .errors import SopError
 from .gitx import Git
 
 TOOLKIT = pathlib.Path(__file__).resolve().parent.parent
-DEFAULT_REPO = ''      # 3-41：工具包的公开仓库建好后改成 https://github.com/C1fLly/sop.git（和 bootstrap.sh 一样）
+DEFAULT_REPO = 'https://github.com/C1fLly/sop.git'      # 工具包的公开仓库（3-41，和 bootstrap.sh 一样）
 SCOPE = 'project'
 
 
@@ -243,7 +243,7 @@ class GitHubSide:
 
 def toolkit_source(toolkit=TOOLKIT):
     """sop.json 里要写的工具包仓库和版本：版本是正在运行的这一份工具包的提交编号（启动器已核对过它没被改，3.2），
-    仓库地址取 SOP_TOOLKIT_REPO，没有时用 DEFAULT_REPO（3-41 定）。"""
+    仓库地址取 SOP_TOOLKIT_REPO，没有时用 DEFAULT_REPO（3-41 定的公开仓库）。"""
     repo = os.environ.get('SOP_TOOLKIT_REPO') or DEFAULT_REPO
     if not repo:
         raise SopError('工具包仓库的地址还没定（GitHub 上的工具包仓库在任务 3-41 建），写不了 sop.json')

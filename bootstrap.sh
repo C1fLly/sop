@@ -17,14 +17,14 @@
 # 可以重复跑：已经有的跳过，内容没变的文件不重写。
 #
 # 选项（自测、虚拟机验证用；小白不用）：
-#   --repo <地址>    工具包仓库（也可以用环境变量 SOP_TOOLKIT_REPO）。3-41 在 GitHub 上建好仓库后，下面的 DEFAULT_REPO 改成它
+#   --repo <地址>    工具包仓库（也可以用环境变量 SOP_TOOLKIT_REPO）。不给就用下面的 DEFAULT_REPO：GitHub 上的工具包公开仓库（3-41）
 #   --yes            探测到的网络情况直接当成对的，不问
 #   --proxy <地址>   不探测，直接用这个代理（给空的就是不用代理）
 #   --offline <目录> 离线包（3-14）用：不上网，git、curl 的软件包、uv、工具包都从这个目录取。
 #                    小白不直接用它：离线包是一个文件，bash <离线包> 解开后自己带上这个选项（machine/offline/）
 set -uo pipefail
 
-DEFAULT_REPO=''     # 3-41：改成 https://github.com/C1fLly/sop.git
+DEFAULT_REPO='https://github.com/C1fLly/sop.git'     # 工具包的公开仓库（3-41）；不登录也能取
 GITHUB_URL=${SOP_BOOTSTRAP_GITHUB:-https://github.com/}
 ETC_ENV=${SOP_BOOTSTRAP_ETC_ENV:-/etc/environment}
 OS_RELEASE=${SOP_BOOTSTRAP_OS_RELEASE:-/etc/os-release}
@@ -355,7 +355,7 @@ main() {
     [ -f "$OFFLINE/sop.bundle" ] && [ -f "$OFFLINE/VERSION" ] || die "离线包不完整（$OFFLINE）：重新拷一次"
     REPO=$OFFLINE/sop.bundle
   fi
-  [ -n "$REPO" ] || die "还没有写工具包仓库的地址（工具包的公开仓库建好之前，用 --repo 给）"
+  [ -n "$REPO" ] || die "没有工具包仓库的地址（用 --repo 给）"
   TOOLS=$HOME/tools SOP=$HOME/tools/sop
   LOG=$(mktemp "${TMPDIR:-/tmp}/sop-bootstrap.XXXXXX.log")
   cd "$HOME" || die "进不了主目录"

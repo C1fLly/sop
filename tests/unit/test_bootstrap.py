@@ -142,7 +142,18 @@ esac''')
         self.assertIn('只支持 Ubuntu 26.04', r.stderr)
         self.assertEqual(list(self.h.iterdir()), [])                 # 什么都没建
         r = subprocess.run(['bash', str(SCRIPT), '--yes'], capture_output=True, text=True, env=self.env())
-        self.assertIn('工具包仓库的地址', r.stderr)                   # 仓库建好之前要给 --repo
+        self.assertIn('只支持 Ubuntu 26.04', r.stderr)                # 不给 --repo 用默认仓库，照样先看系统、不上网
+        self.assertNotIn('wget', self.log.read_text() if self.log.exists() else '')
+        self.assertEqual(list(self.h.iterdir()), [])
+
+    def test_default_repo(self):
+        """3-41：不给 --repo 时取 GitHub 上的工具包公开仓库，和 sop project new 写进 sop.json 的是同一个地址。"""
+        from kernel import projectnew
+        r = self.func('printf %s "$DEFAULT_REPO"')
+        self.assertEqual(r.stdout, 'https://github.com/C1fLly/sop.git')
+        self.assertEqual(projectnew.DEFAULT_REPO, r.stdout)
+        r = self.func('printf %s "${SOP_TOOLKIT_REPO:-$DEFAULT_REPO}"', SOP_TOOLKIT_REPO='/x/sop.git')
+        self.assertEqual(r.stdout, '/x/sop.git')                      # 环境变量照样能换（自测、虚拟机用）
 
 
 class TestFullRun(Bootstrap):

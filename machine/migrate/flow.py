@@ -1,7 +1,7 @@
-"""`sop machine migrate`：环境迁移 Q1 到 Q5（设计书 4.8；3-31）。Q6 卸载旧的是 3-32，还没做好。
+"""`sop machine migrate`：环境迁移 Q1 到 Q6（设计书 4.8；3-31、3-32）。Q6 里旧的 nvm、uv、pnpm 是 3-61，还没做好。
 
   Q1 清点（inventory.py）→ Q2 规定位置的那一份装好没有（没装好的就是 M2 的安装）→ Q3 逐样选（默认都「留」）
-  → Q4 备份并带走（carry.py，Q3 里选了带走的才有）→ Q5 核对
+  → Q4 备份并带走（carry.py，Q3 里选了带走的才有）→ Q5 核对 → Q6 卸载选了卸的 Docker（uninstall.py，再确认一次，默认不卸）
 
 规矩（4.8）：到小白最后确认卸载之前，旧的一样都不动；中途任何一步失败都只是停下，旧的照常可用。两处替用户定的（3-31，可否决）：
 
@@ -22,7 +22,7 @@ from kernel import paths
 from kernel.errors import SopError
 
 from .. import catalog, locate
-from . import carry as C, inventory, record
+from . import carry as C, inventory, record, uninstall
 from .dockercli import ADMIN, Daemon, first_line, new_daemon
 
 KEEP, DROP = 'keep', 'remove'
@@ -301,7 +301,7 @@ def _new_up(s, new):
 
 
 def migrate(*, ask, say=print, inv=None, probe=None, admin=False, backup_dir=None, q2_fn=q2, new=None,
-            system=_system, relist=_relist, sleep=time.sleep, free=None):
+            system=_system, relist=_relist, sleep=time.sleep, free=None, machine=None):
     record.recover(say)
     with record.Running():
         probe = probe or inventory.Probe(admin=ADMIN if admin else None, notice=say)
@@ -322,7 +322,10 @@ def migrate(*, ask, say=print, inv=None, probe=None, admin=False, backup_dir=Non
             ch = choose(inv, s, probe.now)
             save_choices(ch)
             say(summary(ch))
-            return _carry_all(inv, ch, s, backup_dir, new, free)
+            rc = _carry_all(inv, ch, s, backup_dir, new, free)
+            if rc != 0:
+                return rc
+            return max(uninstall.q6(inv, ch, s, m=machine), _tools_hint(ch, say))
         finally:
             s.finish()
 
@@ -338,7 +341,7 @@ def _carry_all(inv, ch, s, backup_dir, new, free):
         jobs.append((d, vols, imgs))
     if not any(v or i for _, v, i in jobs):
         say('')
-        say('没有要带走的数据，Q4、Q5 不用做。' + _q6_hint(ch))
+        say('没有要带走的数据，Q4、Q5 不用做。')
         if jobs:
             st = C.load_state()
             for d, _, _ in jobs:
@@ -387,21 +390,23 @@ def _carry_all(inv, ch, s, backup_dir, new, free):
                 say('旧的照常可用、不会卸。再执行一次 sop machine migrate 会重新核对。')
                 return 1
         say('')
-        say('带走的镜像和数据卷都核对过了，和搬之前一致。' + C.remove_backup_hint(backup) + _q6_hint(ch))
+        say('带走的镜像和数据卷都核对过了，和搬之前一致。' + C.remove_backup_hint(backup))
         return 0
     finally:
         new.close()
 
 
-def _q6_hint(ch):
-    if any(c['choice'] == DROP for c in ch['docker']) or any(t['choice'] == DROP for t in ch['tools']):
-        return '\n卸载旧的（Q6）还没做好（任务 3-32、3-61），现在旧的照常在、照常能用。'
-    return ''
+def _tools_hint(ch, say):
+    drop = [f'{t["name"]} {t["path"]}' for t in ch['tools'] if t['choice'] == DROP]
+    if drop:
+        say('')
+        say(f'旧的 {"、".join(drop)}：卸载这一步还没做好（任务 3-61），现在照常在、照常能用。')
+    return 0
 
 
 def main(argv):
     import argparse
-    ap = argparse.ArgumentParser(prog='sop machine migrate', description='环境迁移：规定位置装新的，旧的逐样由你选留还是卸（Q1 到 Q5）')
+    ap = argparse.ArgumentParser(prog='sop machine migrate', description='环境迁移：规定位置装新的，旧的逐样由你选留还是卸（Q1 到 Q6）')
     ap.add_argument('--admin', action='store_true', help='一开始就用管理员权限（清点时量全系统盘上 Docker 的目录；会问一次密码）')
     ap.add_argument('--backup-dir', help='备份放在哪（默认 ~/tools/backup/migrate-<日期>）')
     try:

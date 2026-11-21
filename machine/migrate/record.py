@@ -121,6 +121,21 @@ def set_helper(old, image):
     _write(d)
 
 
+def forget(old_host):
+    """Q6 把这份旧 Docker 卸掉了（3-32）：记录里只剩「临时放进它的小镜像还没删」时，这条记录没用了，删掉——
+    不然 sop 每次启动都去连一份已经没了的 Docker；旧的是免管理员那种时，规定位置那份会接过同一条通道，
+    再按记录去删同名的镜像就删错了。还有没起回来的容器时不动（Q6 这时本来就不卸）。返回删了没有。"""
+    try:
+        d = load()
+    except ValueError:
+        return False
+    if not d or d['old'].get('host') != old_host or d['containers']:
+        return False
+    d['helper_added'] = ''
+    _write(d)
+    return True
+
+
 def recover(say=None):
     """`sop` 每次启动先调（kernel/cli.py）。没有记录就什么都不做（只看一个文件在不在）。
     返回 True：没有要起回来的，或者起回来了；False：没起回来（已经说清楚，记录留着）。从不抛错。"""

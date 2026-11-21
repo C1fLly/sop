@@ -227,7 +227,8 @@ class Q4Carry(Base):
             self.assertTrue((backup / f).exists(), f)
         self.assertEqual(stat.S_IMODE(os.stat(backup).st_mode), 0o700)
         self.assertIn('和搬之前一致', out)
-        self.assertIn('卸载旧的（Q6）还没做好', out)
+        self.assertIn('Q6 卸载旧的', out)                                      # 3-32：再确认一次，直接回车 = 不卸
+        self.assertIn('好，不卸。旧的照常在', out)
         # 清单里有路径、类型、归属、权限、校验值、链接指向，没有目录的大小
         text = (backup / 'vol-shop_pgdata.before').read_text()
         self.assertIn('./PG_VERSION|regular file|', text)

@@ -260,15 +260,18 @@ def _entry(probe, real, what=''):
     return e
 
 
-def _residue(kind, what, *, admin, note=''):
+def _residue(kind, what, *, admin, note='', **extra):
+    """残留清单的一项。extra 是给 Q6（uninstall.py）用的：data=True 是数据目录（先删它、再删程序），
+    file 是 apt-line 那一项在哪个文件里。"""
     r = {'kind': kind, 'what': what, 'admin': admin}
     if note:
         r['note'] = note
+    r.update(extra)
     return r
 
 
-def _path_residue(probe, real, admin, note=''):
-    return _residue('path', probe.show(real), admin=admin, note=note) if probe.exists(real) else None
+def _path_residue(probe, real, admin, note='', **extra):
+    return _residue('path', probe.show(real), admin=admin, note=note, **extra) if probe.exists(real) else None
 
 
 def packages(probe):
@@ -304,10 +307,11 @@ def docker_sources(probe):
     files = [os.path.join(d, f) for f in sorted(os.listdir(d))] if os.path.isdir(d) else []
     for f in [probe.p('/etc/apt/sources.list')] + files:
         text = probe.read(f)
-        if not text or 'download.docker.com' not in text:
-            continue
+        if not text or not any('download.docker.com' in ln and not ln.lstrip().startswith('#') for ln in text.splitlines()):
+            continue                # 注释掉的那几行不算（Q6 删软件源时只删没注释掉的）
         if f.endswith('/sources.list'):
-            found.append(_residue('apt-line', f'{probe.show(f)} 里指向 download.docker.com 的那几行', admin=True))
+            found.append(_residue('apt-line', f'{probe.show(f)} 里指向 download.docker.com 的那几行', admin=True,
+                                  file=probe.show(f)))
         else:
             found.append(_residue('path', probe.show(f), admin=True, note='Docker 官方的软件源'))
         keys |= set(re.findall(r'signed-by=([^\]\s]+)', text, re.I))
@@ -451,7 +455,7 @@ def rootless_docker(probe):
     res = []
     # 先删数据、再删程序（4.8：数据目录里属于容器内部账号的文件，要借旧的 rootlesskit 删）
     for d in (data, custom):
-        e = _path_residue(probe, d, False, '先删它，再删程序') if d else None
+        e = _path_residue(probe, d, False, '先删它，再删程序', data=True) if d else None
         if e:
             res.append(e)
     res += [_residue('path', f'~/bin/{b}', admin=False) for b in bins]

@@ -6,10 +6,14 @@
   vols/<卷名>/  数据卷里的文件
 每跑一条都往 $FAKEDOCKER_ROOT/log 记一行 JSON（host、参数），测试据此核对跑过什么、没跑什么。
 
-认得的命令只有迁移用到的几种：version、info、image inspect/rm、pull、save、load、volume create/inspect/rm/ls、
+认得的命令只有迁移用到的几种：version、info、--version、image inspect/rm、pull、save、load、volume create/inspect/rm/ls、
 ps（container ls）--filter volume=… --filter status=running、stop、start、
 run --rm [-i] [--network none] -v 卷:挂载点[:ro] 镜像 命令…：把命令参数里的挂载点换成卷的目录后在本机跑（tar、sh -c 算清单），
 标准输入输出照接。
+
+context show/ls/inspect/use/create（3-32 的默认指向）：只看 --config 给的设置目录，里面 config.json 的 currentContext
+（和真的一样，没写就是 default），别的 context 记在 sop-fake-contexts.json（{名字: 通道}）；default 的通道是 unix:///var/run/docker.sock。
+$FAKEDOCKER_ROOT/<host 换的名字>.down 这个文件在，就当这份 Docker 没在运行（连不上）；假的 systemctl（tests/fakes/system/）停、起服务时放、拿掉它。
 
 故意出错（测试用，都是正则，对「host 加一个空格加参数」比）：
   FAKEDOCKER_FAIL     对上的这条退出码 1
@@ -38,10 +42,12 @@ def die(msg, rc=1):
 
 
 args = sys.argv[1:]
-host = 'default'
+host, cfg = 'default', None
 while args and args[0] in ('--config', '--host', '-H'):
     if args[0] != '--config':
         host = args[1]
+    else:
+        cfg = args[1]
     args = args[2:]
 key = re.sub(r'[^A-Za-z0-9.-]', '_', host)
 D = os.path.join(ROOT, key)
@@ -55,6 +61,55 @@ if os.environ.get('FAKEDOCKER_KILL') and re.search(os.environ['FAKEDOCKER_KILL']
     sys.exit(137)
 if os.environ.get('FAKEDOCKER_FAIL') and re.search(os.environ['FAKEDOCKER_FAIL'], line):
     die(f'假的 docker：故意出错（{line}）')
+
+if args[:1] == ['--version']:
+    print('Docker version 29.0.0-fake, build fake')
+    sys.exit(0)
+if args[:1] == ['context']:
+    if not cfg:
+        die('假的 docker：context 要明说 --config')
+    os.makedirs(cfg, exist_ok=True)
+    CF, XF = os.path.join(cfg, 'config.json'), os.path.join(cfg, 'sop-fake-contexts.json')
+    conf = json.load(open(CF)) if os.path.exists(CF) else {}
+    ctxs = {'default': 'unix:///var/run/docker.sock', **(json.load(open(XF)) if os.path.exists(XF) else {})}
+    sub, rest = (args[1] if len(args) > 1 else ''), args[2:]
+    cur = conf.get('currentContext') or 'default'
+    if sub == 'show':
+        print(cur)
+    elif sub == 'ls':
+        if rest != ['--format', '{{.Name}}|{{.DockerEndpoint}}']:
+            die(f'假的 docker：context ls 的写法没想到：{rest}')
+        for n, h in sorted(ctxs.items()):
+            print(f'{n}|{h}')
+    elif sub == 'inspect':
+        names = [a for a in rest if not a.startswith('-') and a != '{{.Endpoints.docker.Host}}']
+        if names[0] not in ctxs:
+            die(f'context "{names[0]}" does not exist')
+        print(ctxs[names[0]] if '--format' in rest else json.dumps([{'Name': names[0]}]))
+    elif sub == 'use':
+        if rest[0] not in ctxs:
+            die(f'context "{rest[0]}" does not exist')
+        conf['currentContext'] = '' if rest[0] == 'default' else rest[0]
+        if not conf['currentContext']:
+            del conf['currentContext']
+        json.dump(conf, open(CF, 'w'))
+        print(rest[0])
+    elif sub == 'create':
+        name, h = rest[0], None
+        for i, a in enumerate(rest):
+            if a == '--docker':
+                h = rest[i + 1].removeprefix('host=')
+        if name in ctxs:
+            die(f'context "{name}" already exists')
+        mine = {k: v for k, v in ctxs.items() if k != 'default'}
+        mine[name] = h
+        json.dump(mine, open(XF, 'w'))
+        print(name)
+    else:
+        die(f'假的 docker：不认识 context {sub}')
+    sys.exit(0)
+if os.path.exists(D + '.down'):
+    die(f'Cannot connect to the Docker daemon at {host}. Is the docker daemon running?')
 
 SF = os.path.join(D, 'state.json')
 try:

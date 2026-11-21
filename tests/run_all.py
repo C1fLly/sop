@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""跑全部自测：单元测试、流程沙箱、总检查（设计书 16.1、16.2），加文档检查（16.4，3-40）。
+"""跑全部自测：单元测试、流程沙箱、总检查（设计书 16.1、16.2），加文档检查（16.2、16.4，3-40、3-62）。
 
 用法：uv run python tests/run_all.py [--no-skip] [unit|sandbox|checks|docs ...]
   不给部分就四样都跑。工具包仓库在 GitHub 上的检查（.github/workflows/check.yml）一样一样分开跑的就是这几条命令。
@@ -16,8 +16,12 @@ sys.path.insert(0, str(REPO))
 import tests  # noqa: E402,F401  自测的保险（3-59）：先换成假主目录，再跑任何测试（只跑总检查时也一样）
 
 PARTS = ('unit', 'sandbox', 'checks', 'docs')
-# 文档检查：设计书里的章节号、步骤编号等引用没有悬空（改设计书后要跑的那一个，见 docs/交接.md）
-DOC_CHECK = ['docs/试验/脚本/文档核对/check_refs.py', 'docs/设计书.md']
+# 文档检查（16.2）两样：①设计书里的章节号、步骤编号等引用没有悬空（改设计书后要跑的那一个，见 docs/交接.md）；
+# ②文档里写的 `sop …` 命令在命令表 kernel/commands.py 里、写的工具包仓库里的路径存在（checks/doc_refs，3-62）。
+# 小白手册写出来以后（3-39）加进 DOCS。
+DOCS = ['docs/设计书.md', 'README.md', 'checks/README.md', 'flows/README.md', 'prompts/README.md', 'skills/README.md']
+DOC_CHECKS = [['docs/试验/脚本/文档核对/check_refs.py', 'docs/设计书.md'],
+              ['checks/doc_refs/check.py', '--repo', '.', *DOCS]]
 
 
 def run_suite(name, no_skip):
@@ -38,7 +42,8 @@ def main(which, no_skip=False):
         if part == 'checks':
             ok &= subprocess.run([sys.executable, str(REPO / 'checks' / 'total_check.py')]).returncode == 0
         elif part == 'docs':
-            ok &= subprocess.run([sys.executable, *DOC_CHECK], cwd=REPO).returncode == 0
+            for c in DOC_CHECKS:      # 两样都跑完再说结果，一样没过不挡另一样
+                ok &= subprocess.run([sys.executable, *c], cwd=REPO).returncode == 0
         else:
             ok &= run_suite(part, no_skip)
     print('全部通过' if ok else '有没通过的', flush=True)

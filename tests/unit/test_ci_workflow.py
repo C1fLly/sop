@@ -76,8 +76,12 @@ class RunAllParts(unittest.TestCase):
         self.assertIn('不认识的部分', r.stderr)
 
     def test_doc_check_target_exists(self):
-        for p in run_all.DOC_CHECK:
-            self.assertTrue((REPO / p).is_file(), p)
+        self.assertEqual(len(run_all.DOC_CHECKS), 2)      # 章节号、步骤编号；命令和路径（3-62）
+        for c in run_all.DOC_CHECKS:
+            for p in c:
+                if not p.startswith('-') and p != '.':
+                    self.assertTrue((REPO / p).is_file(), p)
+        self.assertIn('docs/设计书.md', run_all.DOCS)
 
 
 class Prepare(TempHome):

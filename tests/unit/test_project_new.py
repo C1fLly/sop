@@ -278,6 +278,25 @@ class TestRedLineAndStops(FlowBase):
         self.assertEqual(self.gh.calls, [])
         self.assertFalse(self.root.exists())
 
+    def test_git_identity_ignores_current_repo(self):
+        """当前目录所在的仓库自己设了身份（.git/config），全局没设：照样算没设（3-41）。"""
+        (self.user_home / '.gitconfig').unlink()
+        other = self.tmp / 'other'
+        sh('git', 'init', '-q', other)
+        sh('git', '-C', other, 'config', 'user.name', 'local')
+        sh('git', '-C', other, 'config', 'user.email', 'local@example.invalid')
+        old = os.getcwd()
+        os.chdir(other)
+        try:
+            self.assertFalse(P.git_identity())
+            with self.assertRaises(SopError) as e:
+                P.new_project('demo', self.human(answers()), github=self.gh)
+        finally:
+            os.chdir(old)
+        self.assertIn('提交身份', str(e.exception))
+        self.assertEqual(self.gh.calls, [])
+        self.assertFalse(self.root.exists())
+
     def test_cli(self):
         """经命令行：sop project new demo（剧本回答），问完停在 GitHub 那一步（假 gh 什么都答不上来）；项目名不对、参数不对时说用法。"""
         self.script.write_text(json.dumps(answers(), ensure_ascii=False))

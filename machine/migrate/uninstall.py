@@ -14,6 +14,8 @@
   卸完、旧的程序确实没了，再切到新的。指着别的（另一份留着的 Docker、远程的）不动。
 - 卸完按 Q1 记下的残留清单逐项再看一遍：不空就如实列出还剩哪几样、怎么自己清掉，不说「卸完了」；规定位置那份要仍然过检查。
 - 删东西之前核对路径：根目录、太靠近根的、主目录和它上面的、~/tools 里面的，一律不删（列为残留）。
+- 软件包卸掉以后还留着的运行时目录、通道（/run/docker、/var/run/docker.sock、/opt/containerd 等）照删；/etc/cni 这种别的软件
+  也可能用的，只在空的时候删（rmdir），里面有别的东西就不算残留（3-33）。
 
 结果记在 ~/tools/sop/config/migrate/uninstall.json。
 """
@@ -147,7 +149,17 @@ def still_there(m, residue):
                 left.append((it, ''))
         elif k == 'path':
             real = m.real(what)
-            if real is None or os.path.lexists(real):
+            if real is None:
+                left.append((it, ''))
+            elif os.path.lexists(real) and it.get('empty_only'):
+                # 是空的才删的目录（/etc/cni 等）：里面有东西就是别的软件的，不算 Docker 的残留
+                r = m.cmd(['find', real, '-mindepth', '1', '-maxdepth', '1', '-print', '-quit'], admin=bool(it.get('admin')),
+                          timeout=60)
+                if r[0] != 0:
+                    left.append((it, f'查不了：{first_line(r[2])}'))
+                elif not r[1].strip():
+                    left.append((it, ''))
+            elif os.path.lexists(real):
                 left.append((it, ''))
         elif k == 'apt-line':
             real = m.real(it.get('file') or '')
@@ -175,7 +187,7 @@ def _manual(it):
     if k == 'group':
         return f'sudo groupdel {w}'
     if k == 'path':
-        return ('sudo ' if it.get('admin') else '') + f'rm -rf {w}'
+        return ('sudo ' if it.get('admin') else '') + (f'rmdir {w}' if it.get('empty_only') else f'rm -rf {w}')
     if k == 'apt-line':
         return f"sudo sed -i '{APT_LINE_SED}' {it.get('file', '')}"
     if k == 'snap':
@@ -283,7 +295,7 @@ def _purge_matches(m, pkgs, say):
 def _paths(m, res, *, admin):
     ok, bad = [], []
     for it in res:
-        if it['kind'] == 'path' and bool(it.get('admin')) == admin:
+        if it['kind'] == 'path' and bool(it.get('admin')) == admin and not it.get('empty_only'):
             why = unsafe(m, it['what'])
             (bad if why else ok).append((it, why))
     return ok, bad
@@ -309,6 +321,10 @@ def _remove_system(m, d, say):
         if not _step(m, say, f'删掉 {"、".join(it["what"] for it, _ in ok_paths)}',
                      ['rm', '-rf', '--', *[m.real(it['what']) for it, _ in ok_paths]], admin=True):
             return False
+    empties = [it for it in res if it['kind'] == 'path' and it.get('empty_only') and not unsafe(m, it['what'])]
+    if empties:     # rmdir 只删空目录：里面有别的软件的东西就留着（按清单的先后，先里面再外面）
+        _step(m, say, f'删掉空目录 {"、".join(it["what"] for it in empties)}（不是空的就留着）',
+              ['rmdir', '--ignore-fail-on-non-empty', '--', *[m.real(it['what']) for it in empties]], admin=True)
     for it in res:
         if it['kind'] == 'apt-line':
             _step(m, say, f'从 {it["file"]} 里删掉指向 download.docker.com 的那几行',

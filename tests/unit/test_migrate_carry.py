@@ -236,6 +236,48 @@ class Q4Carry(Base):
         self.assertIn('./link -> base/1/table', text)
         self.assertRegex(text, r'[0-9a-f]{64}  \./base/1/table')
 
+    def test_link_owners_from_backup(self):
+        """3-33：小镜像里 busybox 的 tar 解包时不给符号链接设归属（虚拟机里真 Docker 上查出来的），要从备份包里读出原来的归属补上。"""
+        import io
+        import tarfile
+        tar = self.tmp / 'b.tar'
+        long = 'd/' + 'x' * 150
+
+        def add(t, name, kind, uid, gid, target=''):
+            ti = tarfile.TarInfo(name)
+            ti.type, ti.uid, ti.gid, ti.linkname = kind, uid, gid, target
+            t.addfile(ti, io.BytesIO(b'') if kind == tarfile.REGTYPE else None)
+
+        with tarfile.open(tar, 'w', format=tarfile.GNU_FORMAT) as t:
+            add(t, '.', tarfile.DIRTYPE, 70, 70)
+            add(t, './blob', tarfile.REGTYPE, 70, 70)
+            add(t, './sub/link', tarfile.SYMTYPE, 70, 71, 'blob')
+            add(t, './rootlink', tarfile.SYMTYPE, 0, 0, 'blob')           # 归 root 的不用补
+            add(t, long, tarfile.SYMTYPE, 5, 0, 'blob')                    # 名字太长的（GNU 长名字）、没带 ./ 的
+            add(t, './名字 有空格', tarfile.SYMTYPE, 0, 9, 'blob')
+            add(t, './hard', tarfile.LNKTYPE, 70, 70, './blob')            # 硬链接不是符号链接
+        self.assertEqual(C.link_owners(tar), [('./sub/link', '70:71'), ('./' + long, '5:0'), ('./名字 有空格', '0:9')])
+
+    def test_restore_fixes_symlink_owners(self):
+        """解包之后补符号链接归属：只对有符号链接的卷（shop_pgdata 有 link），试还原的临时卷和正式的卷都补，补完把临时列表删掉。"""
+        rc, out = self.run_flow(['2', '', '', '', '', 'y'])
+        self.assertEqual(rc, 0, out)
+        fixes = [c for c in self.new_cmds() if c.startswith('run') and 'chown -h' in c]
+        self.assertEqual(len(fixes), 2, fixes)
+        self.assertTrue(any(f'{C.TRY_PREFIX}shop_pgdata:{C.TO}' in c for c in fixes), fixes)
+        self.assertTrue(any(f' shop_pgdata:{C.TO}' in c for c in fixes), fixes)
+        self.assertFalse(any('notes' in c for c in fixes), fixes)
+        backup = pathlib.Path(C.load_state()['backup_dir'])
+        self.assertEqual(list(backup.glob('*.links')), [])
+        self.assertEqual(os.lstat(self.vol(NEW_HOST, 'shop_pgdata') / 'link').st_uid, os.getuid())
+
+    def test_symlink_owner_fix_failure_stops(self):
+        os.environ['FAKEDOCKER_FAIL'] = 'chown -h'
+        rc, out = self.run_flow(['2', '', '', '', '', 'y'])
+        self.assertEqual(rc, 1, out)
+        self.assertIn('符号链接补上原来的归属没成', out)
+        self.assertFalse(C.load_state().get('ready_for_q6', {}).get('docker.io'))
+
     def test_helper_already_in_old_is_kept(self):
         self.seed_old(helper=True)
         rc, out = self.run_flow(['2', '', '', '', '', 'y'])

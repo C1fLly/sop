@@ -8,7 +8,8 @@ Q4（Q3 里选了带走的才有）：
   同时在容器里算一份文件清单（路径、类型、归属、权限、每个文件的校验值、链接指向；不比目录的大小，不同文件系统上不一样）。
   打包之前先停掉正在用这些卷的旧容器——停之前先写记录（record.py），打完包马上起回来，任何一步出错也先起回来。
   然后在新 Docker 里建一个临时卷，把包解进去、算清单，和打包时的一字不差才删掉临时卷、解进同名的新卷（带上原来的标签，
-  编排工具认得出是自己的卷）；对不上就停下，旧的照常可用。
+  编排工具认得出是自己的卷）；对不上就停下，旧的照常可用。小镜像里 busybox 的 tar 解包时不给符号链接设归属，
+  解完按备份包里记的归属补上（3-33）。
 - 打包用的小镜像（HELPER）：新 Docker 里没有就拉一个；旧 Docker 里没有就从新的那份导过去，用完删掉（记在记录里，断了下次 sop 删）。
 - 新 Docker 里已经有同名的卷、又不是这次迁移建的：不覆盖，停下说清楚。
 - 做到哪一步记在 ~/tools/sop/config/migrate/carry.json，断了再执行一次接着做（做完的跳过）。
@@ -20,6 +21,7 @@ import json
 import os
 import pathlib
 import subprocess
+import tarfile
 import time
 
 from kernel import paths
@@ -174,6 +176,37 @@ def unpack(d, vol, tar_file):
         _check(d.run('run', '--rm', '-i', '--network', 'none', '-v', f'{vol}:{TO}', HELPER,
                      'tar', '-C', TO, '--numeric-owner', '-xpf', '-', stdin=f, timeout=6 * 3600),
                f'把备份解进新 Docker 的数据卷 {vol}')
+    fix_link_owners(d, vol, tar_file)
+
+
+def link_owners(tar_file):
+    """备份包里归属不是 root 的符号链接：[(包里的名字, 'uid:gid')]。只读包头（tarfile 跳过文件内容），不解包。"""
+    out = []
+    with tarfile.open(tar_file, 'r:') as t:
+        for m in t:
+            if m.issym() and (m.uid or m.gid):
+                n = m.name if m.name.startswith('./') else './' + m.name
+                out.append((n, f'{m.uid}:{m.gid}'))
+    return out
+
+
+def fix_link_owners(d, vol, tar_file):
+    """小镜像里的 tar 是 busybox 的：解包时不给符号链接设归属，解出来的链接都归 root（3-33 在虚拟机里查出来的；文件、目录不受影响）。
+    解完按备份包里记的归属逐个补上（chown -h 只改链接本身）。没有这样的链接就什么都不做。"""
+    pairs = link_owners(tar_file)
+    if not pairs:
+        return
+    lst = f'{tar_file}.links'
+    with open(lst, 'wb') as f:
+        for n, owner in pairs:
+            f.write(owner.encode() + b'\0' + n.encode('utf-8', 'surrogateescape') + b'\0')
+    try:
+        with open(lst, 'rb') as f:
+            _check(d.run('run', '--rm', '-i', '--network', 'none', '-v', f'{vol}:{TO}', HELPER,
+                         'sh', '-c', 'cd "$1" && xargs -0 -r -n 2 chown -h', 'sh', TO, stdin=f, timeout=3600),
+                   f'给数据卷 {vol} 里的符号链接补上原来的归属')
+    finally:
+        os.unlink(lst)
 
 
 def _same(a, b):

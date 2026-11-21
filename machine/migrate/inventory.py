@@ -50,6 +50,10 @@ SYSTEM_CONF = ('/etc/docker', '/etc/default/docker', '/etc/systemd/system/docker
                '/etc/systemd/system/docker.socket.d', '/etc/systemd/system/containerd.service.d')
 SYSTEM_UNITS = ('docker.service', 'docker.socket', 'containerd.service')
 SYSTEM_SOCK = '/var/run/docker.sock'
+# 软件包卸掉以后还留着的（3-33 在虚拟机里卸 docker.io 查出来的，不属于哪个软件包、是运行时建的）：
+DOCKER_RUNTIME = ('/run/docker', SYSTEM_SOCK)             # dockerd 的运行时目录和通道（在内存里，重启就没；停了服务也还在）
+CONTAINERD_RUNTIME = ('/opt/containerd', '/run/containerd')  # containerd 的插件目录（启动时建的空目录）、运行时目录
+CNI_DIRS = ('/etc/cni/net.d', '/etc/cni')                 # containerd 启动时建的空目录；别的软件也可能往里放东西，所以是空的才删
 # 官方免管理员安装脚本放进 ~/bin 的程序（docker-rootless-extras 和 docker 两个压缩包里的）
 ROOTLESS_BINS = ('containerd', 'containerd-shim-runc-v2', 'ctr', 'docker', 'docker-init', 'docker-proxy', 'dockerd',
                  'dockerd-rootless-setuptool.sh', 'dockerd-rootless.sh', 'rootlesskit', 'rootlesskit-docker-proxy',
@@ -262,7 +266,7 @@ def _entry(probe, real, what=''):
 
 def _residue(kind, what, *, admin, note='', **extra):
     """残留清单的一项。extra 是给 Q6（uninstall.py）用的：data=True 是数据目录（先删它、再删程序），
-    file 是 apt-line 那一项在哪个文件里。"""
+    file 是 apt-line 那一项在哪个文件里，empty_only=True 是只在空的时候才删的目录（3-33）。"""
     r = {'kind': kind, 'what': what, 'admin': admin}
     if note:
         r['note'] = note
@@ -407,6 +411,14 @@ def system_docker(probe, pkgs):
             res.append(e)
     if custom:
         e = _path_residue(probe, probe.p(custom), True, '设置文件里另指的数据目录')
+        if e:
+            res.append(e)
+    for d in DOCKER_RUNTIME + (CONTAINERD_RUNTIME if containerd_goes else ()):
+        e = _path_residue(probe, probe.p(d), True, '运行时留下的' if d.startswith(('/run/', '/var/run/')) else '容器运行时建的')
+        if e:
+            res.append(e)
+    for d in CNI_DIRS if containerd_goes else ():
+        e = _path_residue(probe, probe.p(d), True, '容器运行时建的空目录，里面有别的软件的东西就留着', empty_only=True)
         if e:
             res.append(e)
     res += sources

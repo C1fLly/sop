@@ -14,7 +14,7 @@
   FAKEDOCKER_ROOT  假 docker 的目录：服务停了往 <通道换的名字>.down 放一个文件（假 docker 就连不上），起了拿掉
 
 sudo 不提权：只记一笔、设 FAKESYS_SUDO=1，再执行后面的命令；只肯执行 tests/fakes 里的假命令、`env … sh -c`（PATH 里的
-apt-get 得是假的），以及路径全在 FAKESYS_ROOT 下面的 rm、改的文件在 FAKESYS_ROOT 下面的 sed -i。系统级的改动（apt-get purge、systemctl stop 等、groupdel）
+apt-get 得是假的），以及路径全在 FAKESYS_ROOT 下面的 rm、rmdir、find，改的文件在 FAKESYS_ROOT 下面的 sed -i。系统级的改动（apt-get purge、systemctl stop 等、groupdel）
 没有经过假 sudo 就照真的那样报「权限不够」。
 """
 import json
@@ -116,6 +116,9 @@ if NAME == 'sudo':
         ok = bool(paths) and all(under_root(x) for x in paths)
     elif a[0] == 'sed':
         ok = '-i' in a and under_root(a[-1])
+    elif a[0] in ('rmdir', 'find'):
+        paths = [x for x in a[1:] if x.startswith('/')]
+        ok = bool(paths) and all(under_root(x) for x in paths)
     if not ok:
         die(f'假的 sudo：不执行 {" ".join(a)}')
     os.environ['FAKESYS_SUDO'] = '1'

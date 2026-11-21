@@ -358,6 +358,28 @@ class TestSystemDocker(Base):
         self.assertIsNone(d['daemon'])
         self.assertFalse(any('--host' in a for a in p.ran))
 
+    def test_runtime_leftovers(self):
+        """3-33：软件包卸掉以后还留着的（虚拟机里卸 docker.io 查出来的）：/run/docker、/var/run/docker.sock、/opt/containerd、
+        /run/containerd 照删；/etc/cni/net.d、/etc/cni 只在空的时候删（先里面再外面）。containerd 别的软件还在用时，它的几样不算。"""
+        self.system_root()
+        for x in ('run/docker/netns', 'run/containerd/s', 'opt/containerd/bin', 'opt/containerd/lib', 'etc/cni/net.d'):
+            (self.root / x).mkdir(parents=True)
+        d = inv.inventory(self.probe('system'), tools=[])['docker'][0]
+        by = {r['what']: r for r in d['residue'] if r['kind'] == 'path'}
+        for x in ('/run/docker', '/var/run/docker.sock', '/opt/containerd', '/run/containerd', '/etc/cni/net.d', '/etc/cni'):
+            self.assertIn(x, by)
+            self.assertTrue(by[x]['admin'])
+        self.assertEqual([x for x in by if by[x].get('empty_only')], ['/etc/cni/net.d', '/etc/cni'])
+        self.assertIn('里面有别的软件的东西就留着', inv._residue_text(by['/etc/cni']))
+        # containerd 别的软件还在用（以前卸过 docker.io、containerd 还装着）：containerd 的几样不进清单
+        os.remove(self.root / 'usr/bin/docker')
+        d = inv.inventory(self.probe('system', over={'dpkg': 'docker.io\t29.1.3\trc \ncontainerd\t2.2.2\tii \n'}),
+                          tools=[])['docker'][0]
+        paths = [w for k, w in self.residue(d) if k == 'path']
+        self.assertIn('/run/docker', paths)
+        for x in ('/opt/containerd', '/run/containerd', '/etc/cni/net.d', '/etc/cni'):
+            self.assertNotIn(x, paths)
+
     def test_nothing(self):
         p = self.probe('rootless')            # 这台虚拟机没有系统自带的 Docker
         r = inv.inventory(p, tools=[])

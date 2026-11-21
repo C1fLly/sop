@@ -232,6 +232,48 @@ class SystemDocker(Q6Base):
         res = json.loads((record.migrate_dir() / 'uninstall.json').read_text())['docker.io']
         self.assertEqual((res['left'], res['old_gone'], res['new_ok'], res['pointer']), ([], True, True, 'rootless'))
 
+    def test_runtime_leftovers_removed_and_shared_dir_kept(self):
+        """3-33：/run/docker、通道、/opt/containerd、/run/containerd 删掉；/etc/cni/net.d 空的删掉；/etc/cni 里有别的软件的
+        东西（另一个目录）就留着，而且不算残留（还是说卸完了）。"""
+        self.system_root()
+        for x in ('run/docker/netns', 'run/containerd/s', 'opt/containerd/bin', 'etc/cni/net.d', 'etc/cni/other-tool'):
+            (self.root / x).mkdir(parents=True)
+        touch(self.root / 'etc/cni/other-tool/conf', 'x')
+        d = inv.inventory(self.probe('system'), tools=[])['docker'][0]
+        self.seed_system(d)
+        rc, out = self.q6(d)
+        self.assertEqual(rc, 0, out)
+        self.assertIn('都没有了', out)
+        for x in ('run/docker', 'var/run/docker.sock', 'opt/containerd', 'run/containerd', 'etc/cni/net.d'):
+            self.assertFalse(os.path.lexists(self.root / x), x)
+        self.assertEqual((self.root / 'etc/cni/other-tool/conf').read_text(), 'x')
+        self.assertIn('（不是空的就留着）', out)
+        sudo = [json.loads(x)['args'] for x in self.log_f.read_text().splitlines() if json.loads(x)['cmd'] == 'sudo']
+        rmdir = [a[a.index('rmdir'):] for a in sudo if 'rmdir' in a]
+        self.assertEqual(rmdir, [['rmdir', '--ignore-fail-on-non-empty', '--', str(self.root / 'etc/cni/net.d'),
+                                  str(self.root / 'etc/cni')]])
+        rm = next(a[a.index('rm'):] for a in sudo if 'rm' in a)
+        self.assertNotIn(str(self.root / 'etc/cni'), rm)                    # /etc/cni 不走 rm -rf
+
+    def test_empty_shared_dir_left_is_reported(self):
+        """/etc/cni 是空的却没删掉（rmdir 没成）：算还在，不说卸完了。"""
+        self.system_root()
+        (self.root / 'etc/cni').mkdir(parents=True)
+        d = inv.inventory(self.probe('system'), tools=[])['docker'][0]
+        self.seed_system(d)
+        m = self.machine()
+        real_run = m._run
+
+        def run(argv, timeout):          # rmdir 这一条假装没成（什么都不做）
+            if 'rmdir' in argv:
+                return 0, '', ''
+            return real_run(argv, timeout)
+        m._run = run
+        rc, out = self.q6(d, m=m)
+        self.assertEqual(rc, 1, out)
+        self.assertIn('/etc/cni', out.split('没卸干净')[1])
+        self.assertIn('sudo rmdir /etc/cni', out)
+
     def test_purge_fails_keeps_data_and_pointer(self):
         """卸软件包没成：不往下删数据目录；残留如实列出、不说卸完了；旧的程序还在，默认指向不动。"""
         d = self.system_inv()

@@ -14,6 +14,8 @@
   再记下这次卸载要清掉的残留清单（Q6 逐项核对：软件包连同随它自动装进来的、系统服务、用户组、数据目录、软件源和钥匙文件等）。
 - tools：工具包自己装的那几样（uv、nvm、Node、pnpm、gh、wt）另有一份不在规定位置的：在哪、哪种装法、占多大、
   占不占系统盘、卸载要不要管理员密码。找法和体检一样（locate.find_others）。
+- tool_users：其中 nvm、uv、Node、pnpm 的旧的那一份，还有谁在用（users.py，3-60）：装在旧 nvm 的 Node 下或靠它运行的
+  AI 工具和命令、旧的里面装着的 Node 版本和全局包、用旧 uv 装的 Python 建的 Python 环境、终端启动文件里指向旧位置的几行等。
 
 不做的事（为了「旧的一样都不动」）：
 - 旧的 Docker 没在运行时不去连它（系统自带的那种一连通道就会被系统自动起来），清单里写明「要它运行才列得出」。
@@ -34,6 +36,7 @@ import time
 from kernel import paths
 
 from .. import catalog, locate
+from .users import describe as describe_users, find as find_users
 
 DOCKER_IO_PKGS = ('docker.io', 'docker-buildx', 'docker-compose-v2', 'docker-doc')
 CE_PKGS = ('docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-buildx-plugin', 'docker-compose-plugin',
@@ -675,8 +678,9 @@ def inventory(probe=None, *, tools=None, find=locate.find_others):
         d['on_system_disk'] = any(e.get('on_system_disk') for e in d['dirs'])
         if d.get('daemon'):
             d.update(contents(probe, d['daemon']))
+    others = other_tools(probe, tools, find)
     return {'made_at': time.strftime('%Y-%m-%dT%H:%M:%S%z', time.localtime(probe.now)), 'docker': dockers,
-            'tools': other_tools(probe, tools, find), 'admin_used': probe.asked_admin}
+            'tools': others, 'tool_users': find_users(probe, others), 'admin_used': probe.asked_admin}
 
 
 def save(inv, path=None):
@@ -770,6 +774,7 @@ def describe(inv, now=None):
                 where = f'（在 {c["inside"]} 里面）' if c.get('inside') else f'，{_size(c)}' + ('，在系统盘上' if c.get('on_system_disk') else '')
                 need = '要输管理员密码' if c['admin'] else '不用管理员密码'
                 L.append(f'  {t["name"]}：{c["path"]}，{c["how_text"]}{where}；卸载{need}')
+    L += describe_users(inv.get('tool_users'))
     return '\n'.join(L)
 
 

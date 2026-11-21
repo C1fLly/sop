@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""跑全部自测：单元测试、流程沙箱、总检查（设计书 16.1、16.2）。用法：uv run python tests/run_all.py [unit|sandbox|checks]"""
+"""跑全部自测：单元测试、流程沙箱、总检查（设计书 16.1、16.2），加文档检查（16.4，3-40）。
+
+用法：uv run python tests/run_all.py [--no-skip] [unit|sandbox|checks|docs ...]
+  不给部分就四样都跑。工具包仓库在 GitHub 上的检查（.github/workflows/check.yml）一样一样分开跑的就是这几条命令。
+  --no-skip：有测试被跳过（例如这台电脑上没有 wt、内核没禁用往终端塞按键）就算没通过。
+             GitHub 上加这一项：那里的电脑是现准备的，缺了东西要报出来，不能悄悄少测几项还显示通过。
+"""
 import pathlib
 import subprocess
 import sys
@@ -9,26 +15,43 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 import tests  # noqa: E402,F401  自测的保险（3-59）：先换成假主目录，再跑任何测试（只跑总检查时也一样）
 
+PARTS = ('unit', 'sandbox', 'checks', 'docs')
+# 文档检查：设计书里的章节号、步骤编号等引用没有悬空（改设计书后要跑的那一个，见 docs/交接.md）
+DOC_CHECK = ['docs/试验/脚本/文档核对/check_refs.py', 'docs/设计书.md']
 
-def run_suite(name):
+
+def run_suite(name, no_skip):
     suite = unittest.defaultTestLoader.discover(str(REPO / 'tests' / name), top_level_dir=str(REPO))
     r = unittest.TextTestRunner(verbosity=1).run(suite)
+    if no_skip and r.skipped:
+        print(f'有 {len(r.skipped)} 项被跳过（--no-skip 算没通过）：', flush=True)
+        for test, why in r.skipped:
+            print(f'  跳过：{test.id()}：{why}', flush=True)
+        return False
     return r.wasSuccessful()
 
 
-def main(which):
+def main(which, no_skip=False):
     ok = True
     for part in which:
         print(f'===== {part} =====', flush=True)
         if part == 'checks':
             ok &= subprocess.run([sys.executable, str(REPO / 'checks' / 'total_check.py')]).returncode == 0
+        elif part == 'docs':
+            ok &= subprocess.run([sys.executable, *DOC_CHECK], cwd=REPO).returncode == 0
         else:
-            ok &= run_suite(part)
+            ok &= run_suite(part, no_skip)
     print('全部通过' if ok else '有没通过的', flush=True)
     return 0 if ok else 1
 
 
 if __name__ == '__main__':
-    parts = sys.argv[1:] or ['unit', 'sandbox', 'checks']
+    args = sys.argv[1:]
+    no_skip = '--no-skip' in args
+    parts = [a for a in args if a != '--no-skip']
+    bad = [p for p in parts if p not in PARTS]
+    if bad:
+        sys.exit(f'不认识的部分：{" ".join(bad)}（只有 {"、".join(PARTS)}）')
+    parts = parts or list(PARTS)
     parts = [p for p in parts if p != 'checks' or (REPO / 'checks' / 'total_check.py').exists()]
-    sys.exit(main(parts))
+    sys.exit(main(parts, no_skip))

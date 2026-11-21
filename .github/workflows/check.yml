@@ -1,0 +1,97 @@
+# 工具包仓库自己的检查（设计书 16.4；任务 3-40 写，3-41 在真的 GitHub 上跑通）。
+#
+# 四样分成四个检查，各跑各的、名字固定，分支保护按名字列为「必须通过」（3-41）：
+#   unit     内核单元测试      uv run python tests/run_all.py --no-skip unit
+#   sandbox  流程沙箱          uv run python tests/run_all.py --no-skip sandbox
+#   checks   总检查（16.1）    uv run python tests/run_all.py checks
+#   docs     文档检查          uv run python tests/run_all.py docs
+# 本机跑同样的检查：uv run python tests/run_all.py（不给部分就四样都跑；修完之后的把关脚本 3-44 也用它）。
+# 隔离自检、真实 AI 演练、档案合规测试要本机的环境，只在本机跑（16.4），不在这里。
+#
+# 跑检查的电脑怎么准备的见 tests/ci/prepare.sh（Python、uv、bubblewrap、往终端塞按键的开关、wt）。
+#
+# 安全：
+#   - 只读权限（contents: read），不碰 GitHub 上别的东西；取代码时不把凭据留在 .git/config 里（persist-credentials: false）。
+#   - 这里没有任何真的密钥。唯一用到的机密是 WT_DEPLOY_KEY：一把只能读私有仓库 C1fLly/wt 的部署钥匙，
+#     由用户在 GitHub 网页上建（3-41），只给「准备电脑」那一步，装完 wt 就删。
+#   - 触发方式只有推送、PR（pull_request，不是 pull_request_target）和手动；别人从分叉仓库发来的 PR 拿不到机密，
+#     会停在准备那一步（工具包仓库只收自己的改动，不收外人的 PR）。
+#   - 第三方 Action 只用了 GitHub 官方的 actions/checkout，钉死到提交编号（不是会被挪动的版本标签），
+#     防止标签被改指向别的代码后悄悄换掉我们跑的东西；后面的注释写着对应的版本。
+#     v7.0.1 → 3d3c42e5aac5ba805825da76410c181273ba90b1：3-40 用 git ls-remote 只读查的（轻量标签，就是这个提交），
+#     发布日期经网页摘要是 2026 年 7 月 20 日；在真 GitHub 上能不能跑由 3-41 确认。
+#     uv、wt 不用 Action，用工具包自己的安装脚本、版本钉在 tests/ci/prepare.sh 里。
+#   - 临时电脑钉在 ubuntu-26.04（工具包只支持 Ubuntu 26.04，4.1），不用会自己换系统的 ubuntu-latest。
+
+name: toolkit-check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: toolkit-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: unit
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 准备跑检查的电脑
+        run: tests/ci/prepare.sh
+        env:
+          WT_DEPLOY_KEY: ${{ secrets.WT_DEPLOY_KEY }}
+      - name: 内核单元测试
+        run: uv run python tests/run_all.py --no-skip unit
+
+  sandbox:
+    name: sandbox
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 准备跑检查的电脑
+        run: tests/ci/prepare.sh
+        env:
+          WT_DEPLOY_KEY: ${{ secrets.WT_DEPLOY_KEY }}
+      - name: 流程沙箱
+        run: uv run python tests/run_all.py --no-skip sandbox
+
+  checks:
+    name: checks
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 准备跑检查的电脑（只装 uv：总检查不起受限环境、不调 wt）
+        run: tests/ci/prepare.sh --light
+      - name: 总检查
+        run: uv run python tests/run_all.py checks
+
+  docs:
+    name: docs
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 准备跑检查的电脑（只装 uv）
+        run: tests/ci/prepare.sh --light
+      - name: 文档检查
+        run: uv run python tests/run_all.py docs

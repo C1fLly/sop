@@ -28,6 +28,10 @@
 uv run python tests/run_all.py
 ```
 
+不给部分就跑四样：单元测试 `unit`、流程沙箱 `sandbox`、总检查 `checks`、文档检查 `docs`（设计书里的引用没有悬空），也可以只给其中几样。`--no-skip`：有测试被跳过就算没通过。
+
+工具包仓库放到 GitHub 上以后，`.github/workflows/check.yml` 把这四样分成同名的四个检查各跑一遍（3-40；单元测试、流程沙箱带 `--no-skip`）；跑检查的临时电脑由 `tests/ci/prepare.sh` 准备（只在 GitHub 上跑，本机不要跑）。隔离自检、真实 AI 演练只在本机跑。
+
 uv 只用系统自带的 Python（`pyproject.toml` 里禁止它另外下载）。所有测试都在 `/tmp` 下的临时目录里做，不碰 `~/tools/sop/state`、`~/tools/sop/config`。
 
 **自测的保险（3-59）**：`tests` 这个包一被导入，整个测试进程的主目录（HOME、XDG_*）就换成 `/tmp/sop-test` 下现建的公用假主目录，去掉 AI、GitHub、Docker、SSH 代理一类的变量，PATH 去掉本机主目录下的目录（要用的 uv、uvx、wt 链接进假主目录的 `bin`），见 `tests/safehome.py`；`TempHome` 再给每个测试一个自己的主目录。工具包里会写主目录的入口（`sop machine setup`、M2 安装、`~/.bashrc` 那一段、M3、M4、M5、M7）先过 `kernel/paths.guard_home`：主目录是那个公用的假主目录（测试漏设了 HOME），或者是本机真的主目录、环境却像在自测里（`SOP_HOME` 等不是默认的、HOME 没设），都停下不做。测试要只读地用本机真的主目录（例如 `~/tools/wt`）时用 `tests.safehome.REAL_HOME`。

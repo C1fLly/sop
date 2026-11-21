@@ -49,6 +49,7 @@ class Engine:
         self.waiting = []             # 在等人做什么
         self.problems = []            # 停下的原因
         self.tried_blocked = set()
+        self.over_limit = set()       # 这一轮走到步数上限的范围：不再接着走（3-29 发现原来工单会被反复重开、停不下来）
         self.counts = {}
         self.outlock = threading.Lock()
         self.poll = float(os.environ.get('SOP_POLL_SECONDS', '15'))
@@ -148,6 +149,7 @@ class Engine:
         with self.outlock:
             self.counts[sc.scope] = self.counts.get(sc.scope, 0) + 1
             if self.counts[sc.scope] > MAX_STEPS:
+                self.over_limit.add(sc.scope)
                 self.problems.append(f'{sc.scope} 这一轮已经走了 {MAX_STEPS} 步还没走完，回头路走得太多了，先停下（8.4）。请启动维修窗口。')
                 raise Stop
         if step['actor'] in ('human', 'ai_interactive') and not self.human.can(sc.scope, sid):
@@ -281,7 +283,7 @@ class Engine:
                 plan_merged[t.plan_id] = plan_merged.get(t.plan_id, False) or state.merged(pos)
             runnable, held, waiting_h, blocked = [], [], [], []
             for tid, (t, pos) in ts.items():
-                if pos.status in ('done', 'dropped') or tid in running:
+                if pos.status in ('done', 'dropped') or tid in running or t.scope in self.over_limit:
                     continue
                 if pos.status == 'held':
                     held.append((t, pos)); continue

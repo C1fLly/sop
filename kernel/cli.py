@@ -9,12 +9,32 @@ from .human import NoHuman, ScriptedHuman, TtyHuman
 from .project import Project, find_root
 
 
-def adapter():
-    name = os.environ.get('SOP_AI', 'fake')
-    if name == 'fake':
-        from adapters.ai.fake.adapter import FakeAdapter
-        return FakeAdapter()
-    raise SopError(f'AI 工具适配器 {name} 还没有做（Claude Code 的适配器在第一期第三段）')
+def adapter_name(p=None):
+    """流程引擎用哪个 AI 工具适配器（3-29）：环境变量 SOP_AI（只给流程沙箱、自测用）→ 主线 sop.json 的 ai.tool（10.3 的角色配置，
+    第 1 期所有角色用同一个工具）→ 默认 claude（第 1 期只有 Claude Code）。"""
+    from adapters import ai
+    name = os.environ.get('SOP_AI')
+    if name:
+        if name not in ai.ADAPTERS:
+            raise SopError(f'环境变量 SOP_AI={name}：没有这个 AI 工具适配器（有：{"、".join(ai.ADAPTERS)}）')
+        return name
+    sop = {}
+    if p is not None:
+        try:
+            sop = p.sop_json(fetch=False)
+        except Exception:    # noqa: BLE001  主线还没有 sop.json（例如还没推送过）：按默认
+            sop = {}
+    want = (sop.get('ai') or {}).get('tool') if isinstance(sop.get('ai'), dict) else None
+    if want is None:
+        return ai.DEFAULT
+    if want not in ai.REAL:
+        raise SopError(f'主线 sop.json 里 ai.tool 写的是 {want!r}，第 1 期只能是：{"、".join(ai.REAL)}')
+    return want
+
+
+def adapter(p=None):
+    from adapters import ai
+    return ai.load(adapter_name(p))
 
 
 def human(p, interactive):
@@ -29,7 +49,11 @@ def run_engine(p, interactive=False):
     if not syscheck.gate():        # 系统升级了先重跑隔离自检，没通过就停下（4.5，3-07）
         return 1
     from .engine import Engine
-    st = Engine(p, human(p, interactive), adapter()).run()
+    a = adapter(p)
+    remind = a.reminder()          # 版本和上次真实 AI 演练的不一样（或还没演练过）：每次启动都提醒，流程照常（10.1）
+    if remind:
+        print(f'提醒：{remind}')
+    st = Engine(p, human(p, interactive), a).run()
     return 0 if st in ('done', 'waiting', 'idle') else (3 if st == 'busy' else 1)
 
 
@@ -97,7 +121,7 @@ def feature_drop(p, yes):
             raise SopError('现在没有进行中的功能')
         if not yes:
             raise SopError(f'放弃功能 {f.name} 会关掉它的 PR、删掉它的目录和分支，做到现在的内容全部丢掉。确认就执行 sop feature drop --yes')
-        eng = Engine(p, NoHuman(), adapter())
+        eng = Engine(p, NoHuman(), adapter(p))
         _, ts = state.view(p.flows, f, eng.events(f))
         for t, pos in ts.values():
             if pos.status not in ('done', 'dropped'):

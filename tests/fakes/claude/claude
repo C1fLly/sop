@@ -9,6 +9,7 @@
   fake://garbage  输出不是 JSON
   fake://slow     睡 30 秒
   fake://leak     报错里带着密钥原文（看适配器会不会去掉）
+  fake://noskill  正常，但「加载技能」时会话日志里不记那一条（模仿升级后日志的样子变了，3-29）
   https://<上面几种>.fake.invalid 也一样（3-10：M4 只收 http(s) 开头的地址）
 程序名里带 old 的，--help 里少了 --max-budget-usd（模仿升级后改了用法）。
 每次 -p 调用在 $CLAUDE_CONFIG_DIR/projects/<工作目录改写>/<会话编号>.jsonl 留一行：收到的参数、环境变量的名字、状态目录里的设置。
@@ -79,9 +80,30 @@ def answer_for(msg):
     return '收到'
 
 
+def load_skill(msg):
+    """3-29：一句话以「/<技能名>」开头时，工作目录里有 .claude/skills/<技能名>/SKILL.md 就「加载」它：
+    会话日志里先记一条用户消息「Base directory for this skill: <目录>」加技能原文（和真的一样）；没有这个技能返回 False。
+    fake://noskill 模仿升级后日志里不再有这一条（技能照样「加载」）。"""
+    m = re.match(r'/([a-z0-9][a-z0-9-]*)(\s|$)', msg)
+    if not m:
+        return None
+    d = os.path.join(os.getcwd(), '.claude', 'skills', m.group(1))
+    if not os.path.isfile(os.path.join(d, 'SKILL.md')):
+        return False
+    if mode != 'noskill':
+        body = open(os.path.join(d, 'SKILL.md'), encoding='utf-8').read()
+        rec = {'type': 'user', 'isMeta': True, 'sessionId': sid,
+               'message': {'role': 'user', 'content': [{'type': 'text', 'text': f'Base directory for this skill: {d}\n\n{body}'}]}}
+        history.append(rec)
+        with open(logf, 'a') as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + '\n')
+    return True
+
+
 def turn(msg, extra=None):
     """一句话：记进会话日志，返回回答。"""
     global cum
+    loaded = load_skill(msg)
     rec = {'argv': argv, 'env_names': sorted(os.environ), 'token': tok if tok.startswith('fake-') else ('其他' if tok else ''),
            'home': os.environ.get('HOME'), 'cwd': os.getcwd(), 'settings': settings, 'prompt': msg, 'sessionId': sid}
     if resume_sid:
@@ -89,6 +111,9 @@ def turn(msg, extra=None):
     if mode == 'quota':
         rec['error'] = 'API Error: 403 {"error":{"type":"insufficient_balance","message":"insufficient balance"}}'
         ans = 'API Error: 403 insufficient balance'
+    elif loaded is False:
+        ans = f'Unknown skill: {msg.split()[0][1:]}'
+        cum = round(cum + PER_TURN, 6)
     else:
         ans = answer_for(msg)
         cum = round(cum + PER_TURN, 6)
@@ -97,7 +122,7 @@ def turn(msg, extra=None):
     history.append(rec)
     with open(logf, 'a') as fh:
         fh.write(json.dumps(rec, ensure_ascii=False) + '\n')
-    if '/sop/out/result.json' in msg and os.path.isdir('/sop/out') and mode != 'quota':
+    if '/sop/out/result.json' in msg and os.path.isdir('/sop/out') and mode != 'quota' and loaded is not False:
         with open('/sop/out/result.json', 'w') as fh:
             json.dump({'status': 'done', 'commits': [], 'commands': [], 'deviations': [], 'questions': [],
                        'findings': [{'text': '假的发现', 'blocking': False}]}, fh, ensure_ascii=False)

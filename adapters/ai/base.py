@@ -18,6 +18,8 @@ class Outcome:
     text: str = ''               # 最后的回答（给人看）
     timeout: bool = False
     cost_basis: str = '工具报告'  # 金额从哪来：工具报告的，或者没读到报告
+    # 任务包点名的技能这次真的加载了没有（3-29，从会话日志里认）：True 加载了、False 没加载、None 没点名技能或适配器认不出
+    skill_loaded: bool | None = None
 
 
 @dataclass
@@ -79,6 +81,10 @@ class Adapter:
     def probe(self):
         """返回 ProbeResult。"""
         raise NotImplementedError
+
+    def reminder(self):
+        """流程命令每次启动时的提醒（10.1：版本和上次真实 AI 演练的不一样、或还没演练过）。没有就是空。"""
+        return ''
 
     def run_headless(self, run_ctx, taskpack, state_dir, timeout=None):
         raise NotImplementedError

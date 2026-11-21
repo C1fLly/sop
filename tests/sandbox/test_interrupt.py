@@ -60,6 +60,25 @@ class TestInterrupt(SandboxCase):
         self.assertEqual(len(self.prs()), 2)          # 功能 PR 一个、工单 PR 一个
 
 
+class TestStepLimitInTicket(SandboxCase):
+    def test_ticket_hits_step_limit_stops(self):
+        """3-29 发现的：工单在一轮里走到步数上限（8.4 防打转的总保险）时，原来工单线程停了又被重开、sop 一直不退出。
+        现在停下说明原因；之后正常执行 sop 能接着做完。"""
+        self.start([('01', [], '无')])
+        w = self.w
+        w.script[f'{T1}:T3:1'] = {'sleep': 600}
+        w.save_scripts()
+        w.sop('status')
+        hit, out = w.sop_until(started('T3', T1))
+        self.assertTrue(hit, out[-2000:])
+        r = w.sop(timeout=180, env={'SOP_MAX_STEPS_PER_RUN': '1'})
+        self.assertEqual(r.returncode, 1, r.stdout[-2000:])
+        self.assertIn(f'{T1} 这一轮已经走了 1 步还没走完', r.stdout)
+        self.assertEqual(r.stdout.count('步还没走完'), 1, r.stdout[-2000:])
+        self.assertEqual([t for st, t in self.steps(T1) if st == 'T3'][-1], 'done')
+        self.assertFeatureDone(self.go())
+
+
 class TestKilledEarly(TestInterrupt):
     """在规划对话步骤中间被打断。"""
     kill_at = '12'

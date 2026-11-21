@@ -1,5 +1,7 @@
 """Claude Code 适配器（设计书 10.1、10.2）。3-27 做了能力声明、自检（probe）、自动调用（run_headless）；
-3-28 做了对话方式（start_interactive）、续接（resume）和自检里的「打开对话窗口不出首次启动的那几屏」；接进流程引擎是 3-29。
+3-28 做了对话方式（start_interactive）、续接（resume）和自检里的「打开对话窗口不出首次启动的那几屏」；
+3-29 接进流程引擎（kernel/cli.adapter 按配置选），加了技能触发（任务包点名的技能写成 /<技能名> 放在最前面，从会话日志里认加载了没有）
+和真实 AI 演练（drill.py，过了记下演练过的版本）。
 
 怎么跑（都照第一段、第二段实测过的做法，不加别的花样）：
 - 程序：用官方装法默认位置的那一份（~/.local/bin/claude，是个链接），按它指向的实际文件只读放进受限环境，版本号不写死在路径里（10.1）。
@@ -52,6 +54,9 @@ ENV_PREFIXES = ('ANTHROPIC_',)
 RESERVED = {'CLAUDE_CONFIG_DIR'}
 ENV_LINE = re.compile(r'^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$')
 OUTPUT_FILE = 'sop-claude-output.txt'   # 每次调用的原始输出（去掉密钥），放在状态目录里，给额度报错的扫描和复盘
+SKILL_NAME = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
+# Claude Code 加载一个技能时，往会话日志里写一条用户消息，开头是这一句，后面是技能目录（W34 在 2.1.32x 上看到的；3-29 在 2.1.329 上再看）
+SKILL_LOADED_HEAD = 'Base directory for this skill:'
 
 # 能力声明（10.1 列的各项）。依据写在 10.2 的表里：「实测」的都真的调用过。
 DECLARATION = {
@@ -59,7 +64,7 @@ DECLARATION = {
     'headless': True,                     # 能自动调用：claude -p（实测）
     'resume': True,                       # 能续接：--resume <会话编号>（实测；3-28 适配器实测）
     'skill_syntax': '/{skill}',           # 技能调用的写法（实测）
-    'skill_headless': True,               # 自动调用下能触发技能（S1 实测；3-29 再验）
+    'skill_headless': True,               # 自动调用下能触发技能（S1 实测；3-29 在 2.1.330 上经适配器实测，对话方式的开场也能）
     'subagents': True,
     'restrictions': ['--allowedTools', '--permission-mode'],   # 自带的限制手段：受限环境里不用（10.2 第 6 条）
     'budget_flag': True,                  # 能限定费用：--max-budget-usd（只在自动调用时有效）
@@ -231,6 +236,33 @@ class ClaudeAdapter(Adapter):
         return Outcome(rc=rc, cost=float(j.get('total_cost_usd') or 0.0), session=j.get('session_id'), logs=logs,
                        text=text, timeout=timed_out, cost_basis='工具报告')
 
+    # ---------- 技能触发（3-29） ----------
+    def skill_prompt(self, ctx, taskpack, prompt):
+        """任务包点名了技能（task.json 的 skill）时，把 /<技能名> 放在提示词开头（S1：只允许人触发的技能在自动调用下这样能触发；
+        对话窗口的开场内容、续接的第一句也一样）。工作目录里没有这个技能的副本（.claude/skills/<技能名>/SKILL.md）就不调用。
+        返回 (提示词或 None, 技能名或 None, 不调用的原因或 None)。"""
+        skill = _task_skill(taskpack)
+        if not skill:
+            return prompt, None, None
+        if not SKILL_NAME.match(skill):
+            return None, skill, f'任务包里的技能名 {skill!r} 不对（只能有小写字母、数字和「-」），没有调用 Claude Code'
+        wd = pathlib.Path(ctx.chdir or (pathlib.Path(ctx.root) / ctx.worktree))
+        if not (wd / DECLARATION['skills_dir'] / skill / 'SKILL.md').is_file():
+            return None, skill, (f'任务包点名的技能 {skill} 在这个工作目录里没有副本（{DECLARATION["skills_dir"]}/{skill}/SKILL.md），'
+                                 '没有调用 Claude Code。项目建好时会把技能装进主线（sop project new 的 I4），先查一下主线上的技能目录')
+        return DECLARATION['skill_syntax'].format(skill=skill) + ' ' + prompt, skill, None
+
+    def _with_skill(self, ctx, taskpack, prompt, state_dir, session, call):
+        """点名了技能就加上写法、调用、再从会话日志里认这次有没有真的加载（Outcome.skill_loaded）。"""
+        prompt, skill, problem = self.skill_prompt(ctx, taskpack, prompt)
+        if problem:
+            return Outcome(rc=1, text=problem, cost_basis='没有调用', skill_loaded=False)
+        before = skill_loads(state_dir, session).count(skill) if skill and session else 0
+        out = call(prompt)
+        if skill and out.cost_basis != '没有调用':     # 没调用成（例如对话步骤不在终端里）的不算「技能没触发」
+            out.skill_loaded = skill_loads(state_dir, out.session or session).count(skill) > before
+        return out
+
     def _run_headless(self, run_ctx, taskpack, state_dir, timeout=None, budget=None):
         """在受限环境里自动执行任务包（9.1）：task.md 原文当普通提问传进去。结果文件由 AI 写到 /sop/out/result.json，
         由流程命令校验（9.2）；这里只返回退出状态、花费、会话编号、会话日志位置。"""
@@ -242,7 +274,8 @@ class ClaudeAdapter(Adapter):
             except (OSError, ValueError):
                 budget = None
         prompt = f'下面是这一步的任务包（原文也在 {placement.TASK_MNT}/task.md），照着做。\n\n{body}'
-        return self._invoke(run_ctx, self.command(prompt, budget), state_dir, timeout)
+        return self._with_skill(run_ctx, taskpack, prompt, state_dir, None,
+                                lambda pr: self._invoke(run_ctx, self.command(pr, budget), state_dir, timeout))
 
     # ---------- 对话方式、续接（3-28） ----------
     def interactive_command(self, prompt=None, session=None):
@@ -289,15 +322,25 @@ class ClaudeAdapter(Adapter):
         """10.1：在受限环境里启动交互会话，把任务包作为开场内容；不脱离终端；状态目录由模板现建（调用方建好传进来），
         模板里的 5 项设置让小白看不到首次启动的那几屏（W28）。"""
         prompt = self._taskpack_prompt(taskpack)
-        return self._interactive(run_ctx, self.interactive_command(prompt or None), state_dir)
+        if not prompt:
+            return self._interactive(run_ctx, self.interactive_command(None), state_dir)
+        return self._with_skill(run_ctx, taskpack, prompt, state_dir, None,
+                                lambda pr: self._interactive(run_ctx, self.interactive_command(pr), state_dir))
 
     def resume(self, run_ctx, taskpack, state_dir, session, text, timeout=None):
         """10.1：续接会话并送入补充说明。对话步骤（run_ctx.interactive）打开对话窗口接着聊，补充说明（加上这一步的任务包）是第一句；
-        自动步骤用 -p 接着跑。Claude Code 续接时报的花费是整个会话的累计数，这里只记增量（交接「做试验时要守的规矩」）。"""
+        自动步骤用 -p 接着跑。Claude Code 续接时报的花费是整个会话的累计数，这里只记增量（交接「做试验时要守的规矩」）。
+        这一步的任务包点名了技能时，/<技能名> 放在最前面（3-29）。"""
         pack = self._taskpack_prompt(taskpack, head='下面是这一步的任务包')
         msg = f'{text}\n\n{pack}' if pack else text
         if run_ctx.interactive:
-            return self._interactive(run_ctx, self.interactive_command(msg, session=session), state_dir, resumed=session)
+            return self._with_skill(run_ctx, taskpack, msg, state_dir, session,
+                                    lambda pr: self._interactive(run_ctx, self.interactive_command(pr, session=session),
+                                                                 state_dir, resumed=session))
+        return self._with_skill(run_ctx, taskpack, msg, state_dir, session,
+                                lambda pr: self._resume_headless(run_ctx, taskpack, state_dir, session, pr, timeout))
+
+    def _resume_headless(self, run_ctx, taskpack, state_dir, session, msg, timeout):
         budget = None
         try:
             budget = json.loads((pathlib.Path(taskpack) / 'task.json').read_text(encoding='utf-8')).get('budget_usd')
@@ -383,6 +426,13 @@ class ClaudeAdapter(Adapter):
         if not ready:
             return False, f'在模拟终端里打开对话窗口，{wait} 秒没出输入框', details
         return True, '打开对话窗口直接是输入框，没出首次启动的那几屏', details
+
+    def reminder(self):
+        """10.1：和最近一次做过真实 AI 演练的版本比，不一样或还没演练过就提醒（流程照常）。没装 Claude Code 时不提醒（到 AI 步骤再说）。"""
+        path, _ = self.location()
+        if not path:
+            return ''
+        return drill_reminder(NAME, self.version() or '（查不出版本）')
 
     # ---------- 自检 ----------
     def probe(self, timeout=300, budget=0.5, record=True, screens=True):
@@ -504,6 +554,37 @@ def _session_lines(state_dir, session):
     return out
 
 
+def _task_skill(taskpack):
+    """任务包点名的技能（task.json 的 skill），没有是 None。"""
+    if not taskpack:
+        return None
+    try:
+        s = json.loads((pathlib.Path(taskpack) / 'task.json').read_text(encoding='utf-8')).get('skill')
+    except (OSError, ValueError, AttributeError):
+        return None
+    return s if isinstance(s, str) and s.strip() else None
+
+
+def skill_loads(state_dir, session):
+    """这个会话里加载过的项目技能（按先后，可重复）：会话日志里用户消息开头是「Base directory for this skill: <目录>」、
+    目录是 …/.claude/skills/<技能名> 的那几条（只认项目里的副本；Claude Code 自带的同名技能不算，10.2 第 8 条）。"""
+    out = []
+    for j in _session_lines(state_dir, session):
+        if j.get('type') != 'user':
+            continue
+        content = (j.get('message') or {}).get('content')
+        texts = [content] if isinstance(content, str) else \
+            [c.get('text', '') for c in content if isinstance(c, dict) and c.get('type') == 'text'] if isinstance(content, list) else []
+        for t in texts:
+            if not t.startswith(SKILL_LOADED_HEAD):
+                continue
+            rest = t[len(SKILL_LOADED_HEAD):].strip()
+            parent, name = os.path.split(rest.splitlines()[0].strip().rstrip('/') if rest else '')
+            if parent.endswith('/' + DECLARATION['skills_dir']):
+                out.append(name)
+    return out
+
+
 def _cost_state(state_dir, session):
     """会话日志里工具自己记的累计花费（最后一条 type 是 cost-state 的 totalCostUSD）。没有是 None。"""
     vals = [j.get('totalCostUSD') for j in _session_lines(state_dir, session) if j.get('type') == 'cost-state']
@@ -538,9 +619,9 @@ def _mk(p):
     return p
 
 
-def _mini_project(R, W):
+def _mini_project(R, W, skills=None):
     """自检用的一次性小项目（和真项目一样：项目根下 .git 是裸仓库、工作目录是它的一个工作目录），自检完整个删掉。
-    不读用户自己的 Git 设置和钩子模板。"""
+    不读用户自己的 Git 设置和钩子模板。skills：{技能名: 副本里的目录}，原样复制进 .claude/skills/<技能名>/ 一起提交（3-29 演练用）。"""
     env = {**{k: v for k, v in os.environ.items() if not k.startswith('GIT_')},
            'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1',
            'GIT_AUTHOR_NAME': 'sop', 'GIT_AUTHOR_EMAIL': 'sop@sop.invalid',
@@ -551,6 +632,8 @@ def _mini_project(R, W):
         subprocess.run(['git', *map(str, a)], env=env, check=True, capture_output=True)
     g('init', '-q', '--template=', '-b', 'main', seed)
     (seed / 'README.md').write_text('自检用的小项目\n', encoding='utf-8')
+    for name, src in (skills or {}).items():
+        shutil.copytree(src, seed / DECLARATION['skills_dir'] / name)
     g('-C', seed, 'add', '-A')
     g('-C', seed, 'commit', '-qm', 'probe')
     R.mkdir(parents=True)

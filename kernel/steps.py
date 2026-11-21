@@ -260,6 +260,9 @@ def ai_step(eng, f, sc, step, attempt, pos):
     base_res = dict(cost=out.cost, notes=notes)
     if any(n.get('paused') for n in notes):
         return R(False, '同一个功能里第二次碰到额度类的报错，暂停', hold=True, **base_res)
+    bad = skill_problem(step, out)
+    if bad:
+        return R(False, bad, hold=True, **base_res)
     if out.rc != 0 or out.timeout:
         return R(False, f'AI 工具没有正常结束（退出码 {out.rc}{"，超时" if out.timeout else ""}）：{out.text[-300:]}', **base_res)
     rpath = d / 'out' / 'result.json'
@@ -308,6 +311,21 @@ def ai_step(eng, f, sc, step, attempt, pos):
     # 工单上的实现（T3、T6、T7、T14）：AI 自己提交；结果文件、提交、可改范围由 T4 核对
     reopen = ['T11'] if step.get('changes_confirmed') and 'T11' in pos.confirms else []
     return R(True, payload={'run': str(d), 'base': scope_base, 'snapshot': snapshot}, reopen=reopen, **base_res)
+
+
+def skill_problem(step, out):
+    """3-29：流程定义点名了技能，适配器认出这次没有加载它（Outcome.skill_loaded 是 False）时，停在这一步、交维修窗口：
+    不是 AI 做得不好，重做一遍也一样（工作目录里没有技能副本，或者 AI 工具升级后技能的写法、日志的样子变了）。
+    适配器认不出来（None，例如假 AI）的不管；调用本身出了错（退出码不是 0、超时）的按「AI 工具没有正常结束」走。"""
+    skill = step.get('skill')
+    if not skill or out.skill_loaded is not False:
+        return ''
+    if out.cost_basis == '没有调用':
+        return f'{out.text}。先停下，启动维修窗口（sop repair）'
+    if out.rc != 0 or out.timeout:
+        return ''
+    return (f'流程定义要这一步调用技能 {skill}，但 AI 工具的会话日志里没有它加载过的记录（多半是 AI 工具升级后技能的写法或日志的样子变了，'
+            '这一步做出来的不算数）。先停下，启动维修窗口（sop repair）')
 
 
 def run_named_check(eng, f, name, wt):

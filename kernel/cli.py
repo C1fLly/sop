@@ -147,6 +147,10 @@ def init_project(p):
 
 
 def main(argv):
+    if argv[:2] != ['machine', 'migrate']:
+        # 环境迁移停掉的旧容器，上次没起回来（断电、被强制结束）：每次启动先起回来（4.8 Q4，3-31）。没有记录时只看一个文件在不在
+        from machine.migrate import record
+        record.recover()
     try:
         if argv[:2] == ['self', 'bootstrap'] or argv[:2] == ['self', 'install']:
             from . import version

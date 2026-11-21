@@ -1,0 +1,10 @@
+#!/bin/sh
+# 假的 sudo（3-31 单元测试用）：不提权，只记一行，再照原样执行后面的命令。只肯执行假的 docker，别的一律拒绝。
+[ -n "${FAKEDOCKER_ROOT:-}" ] && echo "$*" >> "$FAKEDOCKER_ROOT/sudo.log"
+while [ "${1#-}" != "$1" ]; do
+  case $1 in -p) shift 2 ;; *) shift ;; esac
+done
+case $1 in
+  */tests/fakes/docker/docker) exec "$@" ;;
+  *) echo "假的 sudo：只执行假的 docker，不执行 $1" >&2; exit 1 ;;
+esac

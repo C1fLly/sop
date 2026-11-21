@@ -1,11 +1,10 @@
 """`sop machine …`：机器级的命令（设计书 4.5、8.5）。不在项目里也能用。
 
-第三段一样一样补：doctor（体检，3-06 做好了）、setup（安装，M2 到 M7 串起来，3-12 做好了）、migrate（环境迁移，3-31 起）；clean 在第 3 期（W31）。
+第三段一样一样补：doctor（体检，3-06 做好了）、setup（安装，M2 到 M7 串起来，3-12 做好了）、migrate（环境迁移 Q1 到 Q5，3-31 做好了；Q6 卸载是 3-32）；clean 在第 3 期（W31）。
 """
 from . import catalog
 
 LATER = {
-    'migrate': '环境迁移还没做好（第 1 期第三段的任务 3-31、3-32）',
     'clean': '清理磁盘排在第 3 期（W31）',
 }
 STEP_NAMES = {'M0': '第零步', 'M2': '安装工具', 'M5': '安装 wt'}
@@ -16,7 +15,9 @@ HELP = '''sop machine 的用法：
                         加 --readonly 只看不记（不写任何登记）；加 --no-network 不试连网络
   sop machine setup     安装：装工具、登录 GitHub、登录 AI 工具、装 wt、准备受限环境、装全局规则（M2 到 M7），每步做完核对；
                         已经合格的跳过，中途断了再执行一次就接着做。加 --recheck：AI 自检、隔离自检不管变没变都重新真跑一次
-  sop machine migrate   环境迁移（还没做好）'''
+  sop machine migrate   环境迁移：清点不在规定位置的工具，规定位置装好新的，旧的逐样选留还是卸（默认留）；
+                        要卸的 Docker 里的数据卷、镜像逐样选带不带走，带走的先备份、试着还原、核对一致。
+                        加 --admin 一开始就用管理员权限；--backup-dir <目录> 换备份位置。卸载旧的那一步还没做好（3-32）'''
 
 
 def show_tools():
@@ -44,6 +45,9 @@ def main(argv):
     if cmd == 'setup' and opts in ([], ['--recheck']):
         from . import setup
         return setup.main(opts)
+    if cmd == 'migrate':
+        from .migrate import flow
+        return flow.main(opts)
     if cmd in LATER:
         print(LATER[cmd])
         return 2

@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+"""假的 docker 命令（3-31 环境迁移的单元测试用）。从来不连真的 Docker：所有状态都在 FAKEDOCKER_ROOT 指的临时目录里，没设就报错退出。
+
+每一份「Docker」按 --host 分开（旧的、新的各一份），目录是 $FAKEDOCKER_ROOT/<把 host 里的符号换成 _>/：
+  state.json   {"images": {名字: {"id", "size"}}, "containers": {名字: {"running", "volumes": [...]}}, "volumes": {名字: {"labels": {}}}}
+  vols/<卷名>/  数据卷里的文件
+每跑一条都往 $FAKEDOCKER_ROOT/log 记一行 JSON（host、参数），测试据此核对跑过什么、没跑什么。
+
+认得的命令只有迁移用到的几种：version、info、image inspect/rm、pull、save、load、volume create/inspect/rm/ls、
+ps（container ls）--filter volume=… --filter status=running、stop、start、
+run --rm [-i] [--network none] -v 卷:挂载点[:ro] 镜像 命令…：把命令参数里的挂载点换成卷的目录后在本机跑（tar、sh -c 算清单），
+标准输入输出照接。
+
+故意出错（测试用，都是正则，对「host 加一个空格加参数」比）：
+  FAKEDOCKER_FAIL     对上的这条退出码 1
+  FAKEDOCKER_KILL     对上的这条先 kill -9 调用它的进程（模拟 sop 被强制结束、终端被关），再退出
+  FAKEDOCKER_CORRUPT  对卷名比：tar 解进这个卷之后，往里面第一个文件末尾多写一个字节（模拟还原出来对不上）
+  FAKEDOCKER_REQUIRE  一个文件路径：stop 之前这个文件必须在（核对「停容器之前先写记录」）
+"""
+import hashlib
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+
+ROOT = os.environ.get('FAKEDOCKER_ROOT')
+if not ROOT or not os.path.isdir(ROOT):
+    print('假的 docker：没设 FAKEDOCKER_ROOT（或目录不在），什么都不做', file=sys.stderr)
+    sys.exit(99)
+
+
+def die(msg, rc=1):
+    print(msg, file=sys.stderr)
+    sys.exit(rc)
+
+
+args = sys.argv[1:]
+host = 'default'
+while args and args[0] in ('--config', '--host', '-H'):
+    if args[0] != '--config':
+        host = args[1]
+    args = args[2:]
+key = re.sub(r'[^A-Za-z0-9.-]', '_', host)
+D = os.path.join(ROOT, key)
+os.makedirs(os.path.join(D, 'vols'), exist_ok=True)
+line = f'{host} {" ".join(args)}'
+with open(os.path.join(ROOT, 'log'), 'a') as f:
+    f.write(json.dumps({'host': host, 'args': args}, ensure_ascii=False) + '\n')
+
+if os.environ.get('FAKEDOCKER_KILL') and re.search(os.environ['FAKEDOCKER_KILL'], line):
+    os.kill(os.getppid(), signal.SIGKILL)
+    sys.exit(137)
+if os.environ.get('FAKEDOCKER_FAIL') and re.search(os.environ['FAKEDOCKER_FAIL'], line):
+    die(f'假的 docker：故意出错（{line}）')
+
+SF = os.path.join(D, 'state.json')
+try:
+    with open(SF) as f:
+        S = json.load(f)
+except FileNotFoundError:
+    S = {}
+for k in ('images', 'containers', 'volumes'):
+    S.setdefault(k, {})
+
+
+def save():
+    with open(SF + '.tmp', 'w') as f:
+        json.dump(S, f, ensure_ascii=False, indent=1)
+    os.replace(SF + '.tmp', SF)
+
+
+def vdir(name):
+    return os.path.join(D, 'vols', name)
+
+
+def ref(r):
+    return r if ':' in r or '@' in r else r + ':latest'
+
+
+if not args:
+    die('用法不对')
+cmd, rest = args[0], args[1:]
+if cmd == 'container' and rest[:1] == ['ls']:
+    cmd, rest = 'ps', rest[1:]
+if cmd == 'image' and rest[:1] in (['inspect'], ['rm'], ['load'], ['save'], ['pull']):
+    cmd, rest = {'inspect': 'image-inspect', 'rm': 'rmi'}.get(rest[0], rest[0]), rest[1:]
+
+if cmd in ('version', 'info'):
+    print('fake 29.0.0')
+elif cmd == 'image-inspect':
+    names = [a for a in rest if not a.startswith('-')]
+    out = []
+    for n in names:
+        if ref(n) not in S['images']:
+            print('[]')
+            die(f'Error response from daemon: No such image: {n}')
+        out.append({'Id': S['images'][ref(n)]['id'], 'RepoTags': [ref(n)]})
+    print(json.dumps(out))
+elif cmd == 'pull':
+    n = ref(rest[-1])
+    S['images'][n] = {'id': 'sha256:' + hashlib.sha256(n.encode()).hexdigest(), 'size': 8_000_000}
+    save()
+    print(f'Status: Downloaded newer image for {n}')
+elif cmd == 'rmi':
+    for n in rest:
+        if ref(n) not in S['images']:
+            die(f'Error: No such image: {n}')
+        del S['images'][ref(n)]
+    save()
+elif cmd == 'save':
+    names = [ref(a) for a in rest if not a.startswith('-')]
+    missing = [n for n in names if n not in S['images']]
+    if missing:
+        die(f'Error response from daemon: reference does not exist: {missing[0]}')
+    sys.stdout.write(json.dumps({'fake-image-archive': {n: S['images'][n] for n in names}}))
+elif cmd == 'load':
+    data = json.loads(sys.stdin.read() or '{}').get('fake-image-archive')
+    if data is None:
+        die('Error: 这不是镜像包')
+    S['images'].update(data)
+    save()
+    for n in data:
+        print(f'Loaded image: {n}')
+elif cmd == 'volume':
+    sub, rest = rest[0], rest[1:]
+    if sub == 'create':
+        labels, name = {}, None
+        i = 0
+        while i < len(rest):
+            if rest[i] == '--label':
+                k, _, v = rest[i + 1].partition('=')
+                labels[k] = v
+                i += 2
+            else:
+                name = rest[i]
+                i += 1
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]+', name or ''):
+            die(f'Error response from daemon: create {name}: "{name}" includes invalid characters for a local volume name')
+        S['volumes'].setdefault(name, {'labels': labels})
+        os.makedirs(vdir(name), exist_ok=True)
+        save()
+        print(name)
+    elif sub == 'inspect':
+        out = []
+        for n in rest:
+            if n not in S['volumes']:
+                print('[]')
+                die(f'Error response from daemon: get {n}: no such volume')
+            out.append({'Name': n, 'Driver': S['volumes'][n].get('driver', 'local'), 'Labels': S['volumes'][n].get('labels') or None})
+        print(json.dumps(out))
+    elif sub == 'rm':
+        for n in [a for a in rest if not a.startswith('-')]:
+            if n not in S['volumes']:
+                die(f'Error response from daemon: get {n}: no such volume')
+            if any(n in c.get('volumes', []) for c in S['containers'].values()):
+                die(f'Error response from daemon: remove {n}: volume is in use')
+            del S['volumes'][n]
+            shutil.rmtree(vdir(n), ignore_errors=True)
+        save()
+    elif sub == 'ls':
+        print('\n'.join(sorted(S['volumes'])))
+    else:
+        die(f'假的 docker：不认识 volume {sub}')
+elif cmd == 'ps':
+    filters = [rest[i + 1] for i, a in enumerate(rest) if a == '--filter']
+    names = []
+    for n, c in sorted(S['containers'].items()):
+        ok = True
+        for flt in filters:
+            k, _, v = flt.partition('=')
+            if k == 'volume' and v not in c.get('volumes', []):
+                ok = False
+            if k == 'status' and v == 'running' and not c.get('running'):
+                ok = False
+        if ok:
+            names.append(n)
+    print('\n'.join(names))
+elif cmd in ('stop', 'start'):
+    req = os.environ.get('FAKEDOCKER_REQUIRE')
+    if cmd == 'stop' and req and not os.path.exists(req):
+        die(f'假的 docker：停容器之前该先写记录 {req}，没有', 98)
+    names = []
+    i = 0
+    while i < len(rest):
+        if rest[i] in ('-t', '--time'):
+            i += 2
+            continue
+        names.append(rest[i])
+        i += 1
+    for n in names:
+        if n not in S['containers']:
+            die(f'Error response from daemon: No such container: {n}')
+        S['containers'][n]['running'] = cmd == 'start'
+        print(n)
+    save()
+elif cmd == 'run':
+    mounts, i, rm = [], 0, False
+    while i < len(rest) and rest[i].startswith('-'):
+        a = rest[i]
+        if a in ('-v', '--volume'):
+            mounts.append(rest[i + 1])
+            i += 2
+        elif a == '--network':
+            i += 2
+        elif a == '--rm':
+            rm = True
+            i += 1
+        elif a == '-i':
+            i += 1
+        else:
+            die(f'假的 docker：run 不认识 {a}')
+    if not rm:
+        die('假的 docker：迁移只该起用完就删的临时容器（--rm）')
+    image, argv = ref(rest[i]), rest[i + 1:]
+    if image not in S['images']:
+        die(f'Unable to find image \'{image}\' locally', 125)
+    table = []
+    for m in mounts:
+        src, dst = m.split(':')[:2]
+        if src.startswith('/'):
+            die('假的 docker：迁移不该往临时容器里挂宿主机的目录')
+        if src not in S['volumes']:
+            S['volumes'][src] = {'labels': {}}
+            os.makedirs(vdir(src), exist_ok=True)
+            save()
+        table.append((dst, vdir(src), src))
+    out = []
+    for a in argv:
+        for dst, real, _ in table:
+            if a == dst or a.startswith(dst + '/'):
+                a = real + a[len(dst):]
+        out.append(a)
+    p = subprocess.run(out)
+    corrupt = os.environ.get('FAKEDOCKER_CORRUPT')
+    if p.returncode == 0 and corrupt and argv[:1] == ['tar'] and any(x.startswith('-x') for x in argv):
+        for _, real, name in table:
+            if re.search(corrupt, name):
+                for dp, _, files in sorted(os.walk(real)):
+                    if files:
+                        with open(os.path.join(dp, sorted(files)[0]), 'ab') as f:
+                            f.write(b'!')
+                        break
+    sys.exit(p.returncode)
+else:
+    die(f'假的 docker：不认识的命令 {cmd}')

@@ -231,9 +231,10 @@ class TestMachineCli(TempHome):
         p = self.sop('machine')
         self.assertEqual(p.returncode, 0)
         self.assertIn('sop machine tools', p.stdout)
-        p = self.sop('machine', 'migrate')
+        # sop machine migrate 3-31 做好了：这里只看用法写错时不动手（真跑会清点这台电脑，在 test_migrate_carry 里用假的 docker 测）
+        p = self.sop('machine', 'migrate', '--bogus')
         self.assertEqual(p.returncode, 2)
-        self.assertIn('3-31', p.stdout)
+        self.assertIn('sop machine migrate', p.stderr)
         # sop machine setup 3-12 做好了：这里只看用法写错时不动手（真跑会改主目录，只在流程沙箱的临时「电脑」里跑）
         p = self.sop('machine', 'setup', '--bogus')
         self.assertEqual(p.returncode, 2)

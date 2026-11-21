@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""假的 claude（3-27 的单元测试用，不花钱）。只模仿适配器用到的那几样：--version、--help、-p ... --output-format json。
+"""假的 claude（3-27、3-28 的单元测试用，不花钱）。只模仿适配器用到的那几样：--version、--help、-p ... --output-format json、
+--resume <会话编号>、不带 -p 的对话窗口（3-28）。
 怎么表现由环境变量 ANTHROPIC_BASE_URL 定（适配器从 config/ai/claude.env 带进受限环境）：
   fake://ok       正常：回答一句，任务包里要写结果文件就写一份合格的
   fake://list     输出写成一串事件（有的版本是这样）
@@ -11,12 +12,23 @@
   https://<上面几种>.fake.invalid 也一样（3-10：M4 只收 http(s) 开头的地址）
 程序名里带 old 的，--help 里少了 --max-budget-usd（模仿升级后改了用法）。
 每次 -p 调用在 $CLAUDE_CONFIG_DIR/projects/<工作目录改写>/<会话编号>.jsonl 留一行：收到的参数、环境变量的名字、状态目录里的设置。
-密钥只认 fake- 开头的；别的值一律不记（万一真的密钥漏进来，也不往文件里写）。"""
+密钥只认 fake- 开头的；别的值一律不记（万一真的密钥漏进来，也不往文件里写）。
+3-28 加的：
+- 每次回答在那一行里另记 type=assistant 的回答和这个会话到现在的累计花费 cum（每回答一次 0.0123 美元）；
+  --resume 时接着原来那份会话日志，报的 total_cost_usd 是累计数（和真的 Claude Code 一样）；
+- 记得前文：问「暗号是什么」就从这个会话前面的话里找「」括起来的那几个字回答；
+- 对话窗口：状态目录 .claude.json 里少了 W28 那几项设置，就先出对应的首次启动的几屏（英文原句的一部分），回车后
+  信任那一屏和「不逐条询问」警告那一屏按默认的「不，退出」退出；都有就直接出输入框和「⏵⏵ bypass permissions on」；
+  命令行最后的开场内容当第一句话；之后每读一行当一句话，/exit 退出：退出时把 lastCost（累计）、lastSessionId 记进
+  .claude.json 的 projects.<工作目录>，会话日志里加一行 type=cost-state。"""
 import json
 import os
+import re
 import sys
 import time
 import uuid
+
+PER_TURN = 0.0123
 
 argv = sys.argv[1:]
 me = os.path.basename(sys.argv[0])
@@ -30,16 +42,13 @@ if argv[:1] == ['--help']:
         flags.remove('--max-budget-usd <amount>')
     print('Usage: claude [options]\n' + '\n'.join('  ' + f for f in flags))
     sys.exit(0)
-if '-p' not in argv:
-    print('假 claude 只会 -p', file=sys.stderr)
-    sys.exit(2)
-prompt = argv[argv.index('-p') + 1]
+resume_sid = argv[argv.index('--resume') + 1] if '--resume' in argv else None
 mode = os.environ.get('ANTHROPIC_BASE_URL', '').replace('fake://', '')
 if '.fake.invalid' in mode:      # 3-10：M4 只收 http(s) 地址，https://<表现>.fake.invalid 也认
     mode = mode.split('://', 1)[-1].split('.', 1)[0]
 tok = os.environ.get('ANTHROPIC_AUTH_TOKEN', '')
 cfg = os.environ.get('CLAUDE_CONFIG_DIR', '')
-sid = str(uuid.uuid4())
+sid = resume_sid or str(uuid.uuid4())
 settings = None
 try:
     settings = json.load(open(os.path.join(cfg, '.claude.json')))
@@ -47,26 +56,128 @@ except (OSError, ValueError):
     pass
 logd = os.path.join(cfg, 'projects', os.getcwd().replace('/', '-'))
 os.makedirs(logd, exist_ok=True)
-rec = {'argv': argv, 'env_names': sorted(os.environ), 'token': tok if tok.startswith('fake-') else ('其他' if tok else ''),
-       'home': os.environ.get('HOME'), 'cwd': os.getcwd(), 'settings': settings, 'prompt': prompt}
-if mode == 'quota':
-    rec['error'] = 'API Error: 403 {"error":{"type":"insufficient_balance","message":"insufficient balance"}}'
-with open(os.path.join(logd, f'{sid}.jsonl'), 'a') as fh:
-    fh.write(json.dumps(rec, ensure_ascii=False) + '\n')
+logf = os.path.join(logd, f'{sid}.jsonl')
+history = []
+if resume_sid:
+    try:
+        history = [json.loads(x) for x in open(logf, encoding='utf-8') if x.strip()]
+    except OSError:
+        print(f'No conversation found with session ID: {resume_sid}', file=sys.stderr)
+        sys.exit(1)
+cum = max([h.get('cum', 0) for h in history] + [0])
 
 
-def result(text, cost=0.0123, is_error=False, subtype='success'):
+def answer_for(msg):
+    if '暗号' in msg and '什么' in msg:
+        for h in history:
+            m = re.search(r'「(.+?)」', h.get('prompt', ''))
+            if m:
+                return m.group(1)
+        return '不知道'
+    if '「' in msg:
+        return '记好了'
+    return '收到'
+
+
+def turn(msg, extra=None):
+    """一句话：记进会话日志，返回回答。"""
+    global cum
+    rec = {'argv': argv, 'env_names': sorted(os.environ), 'token': tok if tok.startswith('fake-') else ('其他' if tok else ''),
+           'home': os.environ.get('HOME'), 'cwd': os.getcwd(), 'settings': settings, 'prompt': msg, 'sessionId': sid}
+    if resume_sid:
+        rec['resumed'] = resume_sid
+    if mode == 'quota':
+        rec['error'] = 'API Error: 403 {"error":{"type":"insufficient_balance","message":"insufficient balance"}}'
+        ans = 'API Error: 403 insufficient balance'
+    else:
+        ans = answer_for(msg)
+        cum = round(cum + PER_TURN, 6)
+    rec.update({'type': 'assistant', 'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': ans}]}, 'cum': cum})
+    rec.update(extra or {})
+    history.append(rec)
+    with open(logf, 'a') as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False) + '\n')
+    if '/sop/out/result.json' in msg and os.path.isdir('/sop/out') and mode != 'quota':
+        with open('/sop/out/result.json', 'w') as fh:
+            json.dump({'status': 'done', 'commits': [], 'commands': [], 'deviations': [], 'questions': [],
+                       'findings': [{'text': '假的发现', 'blocking': False}]}, fh, ensure_ascii=False)
+    return ans
+
+
+if '-p' not in argv:
+    # ---------- 对话窗口（3-28） ----------
+    rest, i = [], 0
+    while i < len(argv):
+        if argv[i] == '--resume':
+            i += 2
+            continue
+        if not argv[i].startswith('-'):
+            rest.append(argv[i])
+        i += 1
+    opening = rest[-1] if rest else None
+    st = settings or {}
+    cwd = os.getcwd()
+
+    def screen(lines, default_exit):
+        print('\n'.join(lines), flush=True)
+        line = sys.stdin.readline()
+        if default_exit and line.strip() not in ('2', 'y'):
+            print('（按默认的「不，退出」退出了）', flush=True)
+            sys.exit(1)
+
+    if not st.get('hasCompletedOnboarding'):
+        screen(['Choose the text style that looks best with your terminal', '❯ 1. Dark mode'], False)
+        screen(['Security notes:', 'Claude can make mistakes.', 'Press Enter to continue…'], False)
+    if not ((st.get('projects') or {}).get(cwd) or {}).get('hasTrustDialogAccepted'):
+        screen(['Quick safety check: Is this a project you created or one you trust?',
+                '❯ 1. No, exit', '  2. Yes, I trust this folder'], True)
+    if '--dangerously-skip-permissions' in argv and not st.get('bypassPermissionsModeAccepted'):
+        screen(['WARNING: Claude Code running in Bypass Permissions mode', '❯ 1. No, exit', '  2. Yes, I accept'], True)
+    print(' Claude Code v9.9.9（假的）', flush=True)
+    for h in history:
+        if h.get('type') == 'assistant':
+            print(f'❯ {h.get("prompt", "")[:60]}\n● {h["message"]["content"][0]["text"]}')
+
+    def ready():
+        print('─' * 40 + '\n❯ \n' + '─' * 40 + '\n  ⏵⏵ bypass permissions on (shift+tab to cycle)', flush=True)
+
+    if opening:
+        print(f'❯ {opening[:60]}\n● {turn(opening)}', flush=True)
+    ready()
+    while True:
+        line = sys.stdin.readline()
+        if not line or line.strip() == '/exit':
+            break
+        msg = line.strip()
+        if not msg:
+            continue
+        print(f'● {turn(msg)}', flush=True)
+        ready()
+    d = settings if isinstance(settings, dict) else {}
+    d.setdefault('projects', {}).setdefault(cwd, {}).update({'lastCost': cum, 'lastSessionId': sid})
+    with open(os.path.join(cfg, '.claude.json'), 'w') as fh:
+        json.dump(d, fh, ensure_ascii=False)
+    with open(logf, 'a') as fh:
+        fh.write(json.dumps({'type': 'cost-state', 'sessionId': sid, 'totalCostUSD': cum}) + '\n')
+    print('Goodbye!', flush=True)
+    sys.exit(0)
+
+prompt = argv[argv.index('-p') + 1]
+
+
+def result(text, cost=None, is_error=False, subtype='success'):
     return {'type': 'result', 'subtype': subtype, 'is_error': is_error, 'result': text, 'session_id': sid,
-            'total_cost_usd': cost, 'num_turns': 1}
+            'total_cost_usd': cum if cost is None else cost, 'num_turns': 1}
 
 
 if mode == 'slow':
     time.sleep(30)
+ans = turn(prompt)
 if mode == 'garbage':
     print('这不是 JSON')
     sys.exit(0)
 if mode == 'quota':
-    print(json.dumps(result('API Error: 403 insufficient balance', cost=0, is_error=True)))
+    print(json.dumps(result(ans, cost=0, is_error=True)))
     sys.exit(1)
 if mode == 'iserror':
     print(json.dumps(result('', cost=0.001, is_error=True, subtype='error_during_execution')))
@@ -74,9 +185,5 @@ if mode == 'iserror':
 if mode == 'leak':
     print(f'连不上服务，用的密钥是 {tok}', file=sys.stderr)
     sys.exit(1)
-if '/sop/out/result.json' in prompt and os.path.isdir('/sop/out'):
-    with open('/sop/out/result.json', 'w') as fh:
-        json.dump({'status': 'done', 'commits': [], 'commands': [], 'deviations': [], 'questions': [],
-                   'findings': [{'text': '假的发现', 'blocking': False}]}, fh, ensure_ascii=False)
-r = result('收到')
+r = result(ans)
 print(json.dumps([{'type': 'system', 'subtype': 'init'}, r] if mode == 'list' else r))

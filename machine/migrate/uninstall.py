@@ -292,6 +292,15 @@ def _purge_matches(m, pkgs, say):
     return True
 
 
+def _still_installed(m, pkgs):
+    """pkgs 里现在还装着的（Q1 之后小白可能自己卸了；没装的不能写「包名+」，不然 apt 会去装它）。"""
+    if not pkgs:
+        return []
+    r = m.probe.run(['dpkg-query', '-W', '-f', '${Package}\t${Version}\t${db:Status-Abbrev}\n', *pkgs])
+    have = inventory.parse_dpkg(r[1]) if r else {}
+    return [p for p in pkgs if have.get(p, ('', ''))[1].startswith('i')]
+
+
 def _paths(m, res, *, admin):
     ok, bad = [], []
     for it in res:
@@ -306,15 +315,19 @@ def _remove_system(m, d, say):
     units = [r['what'] for r in res if r['kind'] == 'service']
     pkgs = [r['what'] for r in res if r['kind'] == 'package']
     ok_paths, _ = _paths(m, res, admin=True)
-    if pkgs and not _purge_matches(m, pkgs, say):
+    # 工具包自己要用、随 Docker 装进来的（git 等，3-34）：和卸载同一次 apt 里写「包名+」，标成手动装的、不卸
+    held = _still_installed(m, d.get('keep_pkgs') or []) if pkgs else []
+    args = pkgs + [f'{p}+' for p in held]
+    if pkgs and not _purge_matches(m, args, say):
         return False          # 一样都没动
     if units:   # 没停成也往下：卸软件包时系统会再停一次
         _step(m, say, f'停掉旧 Docker 的系统服务 {"、".join(units)}', ['systemctl', 'stop', *units], admin=True)
     if pkgs:
         from ..install import APT_SH
         script = APT_SH.read_text() + '\nsop_apt purge -y -qq "$@"\n'
-        if not _step(m, say, f'卸软件包 {"、".join(pkgs)}（连同设置一起清掉）',
-                     ['env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_SUSPEND=1', 'sh', '-c', script, 'sop-apt', *pkgs],
+        keep = f'；工具包要用的 {"、".join(held)} 不卸、标成「手动装的」' if held else ''
+        if not _step(m, say, f'卸软件包 {"、".join(pkgs)}（连同设置一起清掉）{keep}',
+                     ['env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_SUSPEND=1', 'sh', '-c', script, 'sop-apt', *args],
                      admin=True, fail=_apt_failure):
             return False      # 软件包没卸掉就不删它的数据目录（它可能还在用）
     if ok_paths:
@@ -473,6 +486,8 @@ def _confirm_text(d, c, carried_note):
         L.append(f'  {s}（随旧的一起删掉）')
     if d['kind'] == 'leftover':
         L.append('  里面可能还有以前留下的镜像和数据，它已经不能运行，工具包列不出来、也带不走。')
+    if d.get('keep_pkgs'):
+        L.append(f'不卸的：{"、".join(d["keep_pkgs"])}（随这份 Docker 装进来的，工具包自己也要用；标成「手动装的」留着）')
     if carried_note:
         L.append(carried_note)
     if any(it.get('admin') for it in d['residue']):

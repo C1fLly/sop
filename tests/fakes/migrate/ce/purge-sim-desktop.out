@@ -1,0 +1,23 @@
+NOTE: This is only a simulation!
+      apt-get needs root privileges for real execution.
+      Keep also in mind that locking is deactivated,
+      so don't depend on the relevance to the real current situation!
+Reading package lists...
+Building dependency tree...
+Reading state information...
+Solving dependencies...
+The following packages will be REMOVED:
+  containerd.io* docker-buildx-plugin* docker-ce* docker-ce-cli*
+  docker-ce-rootless-extras* docker-compose-plugin* git* git-man*
+  liberror-perl* pigz*
+0 upgraded, 0 newly installed, 10 to remove and 32 not upgraded.
+Purg docker-ce [5:29.10.0-1~ubuntu.26.04~resolute]
+Purg containerd.io [2.4.2-4~ubuntu.26.04~resolute]
+Purg docker-buildx-plugin [0.39.1-1~ubuntu.26.04~resolute]
+Purg docker-ce-cli [5:29.10.0-1~ubuntu.26.04~resolute]
+Purg docker-ce-rootless-extras [5:29.10.0-1~ubuntu.26.04~resolute]
+Purg docker-compose-plugin [5.8.0-1~ubuntu.26.04~resolute]
+Purg git [1:2.53.0-1ubuntu1.1]
+Purg git-man [1:2.53.0-1ubuntu1.1]
+Purg liberror-perl [0.17030-1]
+Purg pigz [2.8-1build1]

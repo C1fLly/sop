@@ -44,6 +44,10 @@ CE_PKGS = ('docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-buildx-plugin'
 DESKTOP_PKGS = ('docker-desktop',)
 # apt-get -s 用不了时的退路：第一段 vm-a 实测随 docker.io 自动装进来的几个（审查后-专用Docker的视野和迁移残留.md）
 DEPS_HINT = ('containerd', 'runc', 'bridge-utils', 'pigz', 'ubuntu-fan')
+# 工具包自己要用的系统软件包（machine/tools.toml 里「apt:」那几样、免管理员 Docker 要的 iptables、第零步的 wget）。
+# 它们可能是随旧 Docker 当成「自动装的」进来的（3-34：docker-ce 推荐装 git，桌面版本来没有 git，照官网装 docker-ce 时 git
+# 就作为自动装的进来了），这时卸 Docker 不连带卸它们，卸的时候标成「手动装的」（不然系统以后清理用不着的软件包时会删掉）。
+TOOLKIT_PKGS = ('git', 'curl', 'wget', 'bubblewrap', 'uidmap', 'dbus-user-session', 'iptables')
 ALL_PKGS = DOCKER_IO_PKGS + CE_PKGS + DESKTOP_PKGS + ('containerd', 'runc')
 SYSTEM_DATA = ('/var/lib/docker', '/var/lib/containerd')
 SYSTEM_CONF = ('/etc/docker', '/etc/default/docker', '/etc/systemd/system/docker.service.d',
@@ -283,17 +287,26 @@ def packages(probe):
     return parse_dpkg(r[1]) if r else {}
 
 
-def removal(probe, mains):
+def removal(probe, mains, keep=TOOLKIT_PKGS):
     """卸掉 mains 时连带删掉的软件包（含 mains 自己）：apt-get -s purge --autoremove 减去本来就会被自动清掉的那些。
-    apt-get 用不了时退回：第一段实测的那几个里面装着的、标着「自动装的」。返回 (包名列表, 怎么算出来的)。"""
+    其中有 keep 里的（工具包自己要用的，3-34）：不算进去，再模拟一次「它们标成手动装的」（apt-get 的「包名+」，只在模拟里标），
+    它们要用的（git 要的 git-man 等）也就不算了。
+    apt-get 用不了时退回：第一段实测的那几个里面装着的、标着「自动装的」。返回 (包名列表, 怎么算出来的, 留着的 keep 里的包)。"""
     base = probe.run(['apt-get', '-s', 'autoremove'])
     sim = probe.run(['apt-get', '-s', 'purge', '--autoremove', *mains])
     if base and sim and base[0] == 0 and sim[0] == 0:
-        got = set(parse_apt_sim(sim[1])) - set(parse_apt_sim(base[1]))
-        return sorted(got | set(mains)), 'apt-get 模拟'
+        before = set(parse_apt_sim(base[1]))
+        got = set(parse_apt_sim(sim[1])) - before
+        held = sorted((got & set(keep)) - set(mains))
+        if held:
+            sim = probe.run(['apt-get', '-s', 'purge', '--autoremove', *mains, *[f'{p}+' for p in held]])
+            if not (sim and sim[0] == 0):
+                return sorted(set(mains)), '只列了 Docker 自己的几个（工具包要用的那几样留着，再模拟一次没成）', held
+            got = set(parse_apt_sim(sim[1])) - before
+        return sorted((got - set(held)) | set(mains)), 'apt-get 模拟', held
     auto = probe.run(['apt-mark', 'showauto'])
     autos = set(auto[1].split()) if auto and auto[0] == 0 else set()
-    return sorted(set(mains) | {d for d in DEPS_HINT if d in autos}), '按第一段实测的那几个估的'   # showauto 只列装着的
+    return sorted(set(mains) | {d for d in DEPS_HINT if d in autos}), '按第一段实测的那几个估的', []   # showauto 只列装着的
 
 
 def docker_group(probe):
@@ -382,8 +395,13 @@ def system_docker(probe, pkgs):
     # 残留清单
     res = []
     if main_pkgs:
-        gone, how = removal(probe, main_pkgs)
+        gone, how, held = removal(probe, main_pkgs)
         inst['removal_from'] = how
+        if held:
+            inst['keep_pkgs'] = held
+            inst.setdefault('notes', []).append(
+                f'{"、".join(held)} 是随这份 Docker 一起装进来的，工具包自己也要用：卸 Docker 时不卸它，'
+                '并标成「手动装的」（以后系统清理用不着的软件包时也不会删掉它）')
         for p in gone:
             note = '随 Docker 自动装进来的' if p not in main_pkgs else ''
             res.append(_residue('package', p, admin=True, note=note))

@@ -1,6 +1,8 @@
 #!/bin/bash
-# 3-33：在虚拟机里跑（由 migrate-io.sh 拷进去、启动）。见 migrate-io.sh 的说明。
-#   --prepare：先记下装 docker.io 之前系统里有哪些文件、哪些软件包；再装 docker.io、放镜像数据卷容器（单独一次登录做，下一次登录 docker 组才生效）
+# 3-33：在虚拟机里跑（由 migrate-io.sh 拷进去、启动）。见 migrate-io.sh 的说明。3-34 加了 docker-ce（--prepare ce）。
+#   --prepare [io|ce]：先记下装旧 Docker 之前系统里有哪些文件、哪些软件包；再装 docker.io（io，默认）或照 Docker 官网装 docker-ce（ce）、
+#              放镜像数据卷容器（单独一次登录做，下一次登录 docker 组才生效）。装的是哪种记在 ~/io-base/kind，后面几步照它核对。
+#              ce 先造得像桌面版（卸掉 git、curl：桌面版不带），官网的步骤会装回 curl，git 由 docker-ce 推荐装进来（自动装的）
 #   --run1   ：第一遍 sop machine migrate：Q2 装规定位置的 Docker，Q3 选卸 docker.io、带走数据，Q4 停了旧容器、正在打包时强制结束整个 sop；
 #              看旧容器停着；再执行一次别的 sop 命令，看起回来、临时小镜像删掉
 #   --run2   ：先把默认指向手动切到新的（模拟小白切过）；第二遍走完 Q1 到 Q6，Q6 切回原来那份之后暂停整个 sop，看不加 sudo 敲 docker
@@ -9,7 +11,7 @@
 set -uo pipefail
 SRC=~/sop-src
 T=~/tools/docker
-B=~/io-base                          # 装 docker.io 之前的样子、旧数据的校验值
+B=~/io-base                          # 装旧 Docker 之前的样子、旧数据的校验值、装的是哪种（kind）
 PROXY=http://10.0.2.2:7890          # 虚拟机里 10.0.2.2 就是本机，本机的代理
 SOP="python3 -I $SRC/kernel/main.py"   # 启动器执行的就是这一句（kernel/launcher.py、kernel/main.py）
 DRIVE="python3 -I $SRC/tests/vm/migrate-drive.py"
@@ -17,6 +19,8 @@ OLD="env -u DOCKER_HOST -u DOCKER_CONTEXT /usr/bin/docker --host unix:///var/run
 NEW() { env -u DOCKER_CONTEXT DOCKER_HOST="$(cat $T/etc/docker-host)" $T/bin/docker "$@"; }
 term() { bash -ic "$1" 2>&1 | grep -v -e 'cannot set terminal process group' -e 'no job control in this shell'; }
 step() { echo; echo "=== $* ==="; }
+KIND=$(cat $B/kind 2>/dev/null || echo docker.io)     # docker.io 或 docker-ce（--prepare 写的）
+KEEP="git curl wget iptables uidmap dbus-user-session"   # 工具包自己要用的系统软件包（卸旧 Docker 不能连带卸掉，3-34）
 fail=0
 must() { if eval "$1"; then echo "  对：$2"; else echo "  不对：$2"; fail=1; fi; }
 
@@ -32,14 +36,35 @@ if [ "${1:-}" = --look ]; then
 fi
 
 if [ "${1:-}" = --prepare ]; then
+  case ${2:-io} in io) KIND=docker.io ;; ce) KIND=docker-ce ;; *) echo "用法：--prepare [io|ce]"; exit 2 ;; esac
   echo "虚拟机：$(hostname)，$(. /etc/os-release; echo "$PRETTY_NAME")，内核 $(uname -r)"
-  rm -rf $B; mkdir -p $B
-  step "记下装 docker.io 之前的样子（系统文件路径、装着的软件包、主目录里的东西）"
+  rm -rf $B; mkdir -p $B; echo $KIND > $B/kind
+  if [ $KIND = docker-ce ]; then
+    step "先造得像桌面版的小白电脑：卸掉 git、curl（桌面版不带）"
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq git curl 2>&1 | grep -E '^(Removing|Purging)' | sed 's/^/  /'
+    must '! command -v git >/dev/null && ! command -v curl >/dev/null' "git、curl 都没了"
+    # 这台试验电脑只有经本机代理才连得上 download.docker.com（Ubuntu 的软件源直连）；这是「电脑原来的网络设置」，在记样子之前写好
+    printf 'Acquire::https::Proxy::download.docker.com "%s";\n' $PROXY | sudo tee /etc/apt/apt.conf.d/95proxy >/dev/null
+  fi
+  step "记下装 $KIND 之前的样子（系统文件路径、装着的软件包、主目录里的东西）"
   sysfiles > $B/files.txt; pkgs > $B/pkgs.txt
   find ~ -mindepth 1 -maxdepth 3 -not -path "$HOME/sop-src*" -not -path "$HOME/io-base*" | sort > $B/home.txt
   echo "  系统文件 $(wc -l < $B/files.txt) 个，软件包 $(wc -l < $B/pkgs.txt) 个"
-  step "用 Ubuntu 软件源装一份系统自带的 docker.io，小白加进 docker 组"
-  sudo apt-get update -qq >/dev/null; sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io >/dev/null || exit 1
+  if [ $KIND = docker.io ]; then
+    step "用 Ubuntu 软件源装一份系统自带的 docker.io，小白加进 docker 组"
+    sudo apt-get update -qq >/dev/null; sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io >/dev/null || exit 1
+  else
+    step "照 Docker 官网的步骤装 docker-ce（官方软件源 docker.sources、钥匙文件 docker.asc），小白加进 docker 组"
+    sudo apt-get update -qq >/dev/null; sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl >/dev/null || exit 1
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo env https_proxy=$PROXY curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc || { echo "取不到钥匙文件，不重试"; exit 1; }
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+    code=$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+    printf 'Types: deb\nURIs: https://download.docker.com/linux/ubuntu\nSuites: %s\nComponents: stable\nSigned-By: /etc/apt/keyrings/docker.asc\n' "$code" | sudo tee /etc/apt/sources.list.d/docker.sources >/dev/null
+    sudo apt-get update -qq 2>&1 | grep -v -e '^$' -e 'outdated' | tail -3
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null || { echo "装 docker-ce 失败"; exit 1; }
+    echo "  随 docker-ce 进来的「自动装的」：$(apt-mark showauto | grep -x -e git -e pigz -e git-man -e liberror-perl | tr '\n' ' ')"
+  fi
   sudo mkdir -p /etc/systemd/system/docker.service.d       # 虚拟机只能经本机代理拉镜像；小白照网上教程也常这样加
   printf '[Service]\nEnvironment=HTTP_PROXY=%s HTTPS_PROXY=%s NO_PROXY=localhost,127.0.0.1\n' $PROXY $PROXY | sudo tee /etc/systemd/system/docker.service.d/proxy.conf >/dev/null
   sudo systemctl daemon-reload; sudo systemctl restart docker
@@ -57,17 +82,17 @@ if [ "${1:-}" = --prepare ]; then
   $D run --rm -v shop_pgdata:/data:ro -v notes:/notes:ro busybox:1.36 sh -c 'cd /data && sha256sum blob && stat -c "%n %u:%g %a" . blob sub sub/link && readlink sub/link && sha256sum sub/link && cat /notes/a.txt && stat -c "%n %a" /notes/a.txt' > $B/data.txt
   sed 's/^/  旧数据：/' $B/data.txt
   echo "  旧的里面：镜像 $($D image ls --format '{{.Repository}}:{{.Tag}}' | tr '\n' ' ')；卷 $($D volume ls -q | wc -l) 个；容器 $($D ps -a --format '{{.Names}}({{.State}})' | tr '\n' ' ')"
-  echo "  装好的：$(dpkg-query -W -f '${Package} ${Version}' docker.io)"
+  echo "  装好的：$(dpkg-query -W -f '${Package} ${Version}, ' $KIND $( [ $KIND = docker-ce ] && echo docker-ce-cli containerd.io))"
   exit 0
 fi
 
 net() { (cd $SRC && env -u http_proxy -u https_proxy python3 -c "from machine import config; config.set_network(http_proxy='$PROXY', https_proxy='$PROXY', no_proxy='localhost,127.0.0.1', source='user')"); }
 state_of() { $OLD inspect -f '{{.State.Status}}' "$1" 2>/dev/null || echo 没有; }
 rules() {    # $1 = 文件；$2 = 1 表示还要回答「确定现在卸掉它吗」、在切回原来那份之后暂停；否则在打包时强制结束
-  python3 - "$1" "$2" <<'EOF'
-import json, sys, os
-f, q6 = sys.argv[1], sys.argv[2] == '1'
-ans = [{'q': r'docker\.io）[^\n]*合计', 'a': '2'}, {'q': r'匿名卷[^\n]*：', 'a': '2'}, {'q': '现在停一下吗', 'a': 'y'}]
+  python3 - "$1" "$2" "$KIND" <<'EOF'
+import json, sys, os, re
+f, q6, kind = sys.argv[1], sys.argv[2] == '1', sys.argv[3]
+ans = [{'q': re.escape(kind) + r'）[^\n]*合计', 'a': '2'}, {'q': r'匿名卷[^\n]*：', 'a': '2'}, {'q': '现在停一下吗', 'a': 'y'}]
 ev = [{'on': '打包数据卷', 'do': 'kill'}]
 if q6:
     ans.append({'q': '确定现在卸掉它吗', 'a': 'y'})
@@ -129,10 +154,10 @@ if [ "${1:-}" = --run2 ]; then
   must "grep -q '规定位置的 Docker 仍然正常' /tmp/io-run2.log" "规定位置那份仍然正常（sop 自己说的）"
 
   step "自己逐项再核对残留清单（按 Q1 存的 inventory.json）"
-  python3 - > /tmp/io-residue.txt <<'EOF'
+  KIND=$KIND python3 - > /tmp/io-residue.txt <<'EOF'
 import json, os
 inv = json.load(open(os.path.expanduser('~/tools/sop/config/migrate/inventory.json')))
-d = next(d for d in inv['docker'] if d['kind'] == 'docker.io')
+d = next(d for d in inv['docker'] if d['kind'] == os.environ['KIND'])
 for r in d['residue']:
     print(r['kind'], r['what'], r.get('file', ''))
 EOF
@@ -148,10 +173,10 @@ EOF
       *) echo "  不认识：$kind $what"; left=1 ;;
     esac
   done < /tmp/io-residue.txt
-  echo "  残留清单 $n 项：$(cut -d' ' -f1-2 /tmp/io-residue.txt | tr '\n' '，')"
+  echo "  残留清单 $n 项：$(awk '{printf "%s%s %s", (NR > 1 ? "，" : ""), $1, $2}' /tmp/io-residue.txt)"
   must "[ $n -gt 5 ] && [ $left = 0 ]" "残留清单 $n 项逐项为空"
 
-  step "和装 docker.io 之前的系统比（独立于残留清单）"
+  step "和装 $KIND 之前的系统比（独立于残留清单）"
   pkgs > /tmp/io-pkgs-after.txt
   added_pk=$(comm -13 $B/pkgs.txt /tmp/io-pkgs-after.txt | tr '\n' ' '); gone_pk=$(comm -23 $B/pkgs.txt /tmp/io-pkgs-after.txt | tr '\n' ' ')
   echo "  比装之前多的软件包：${added_pk:-无}；少的：${gone_pk:-无}"
@@ -169,6 +194,34 @@ EOF
   must "! sudo test -e /var/run/docker.sock" "系统那条通道 /var/run/docker.sock 没了"
   find ~ -mindepth 1 -maxdepth 3 -not -path "$HOME/sop-src*" -not -path "$HOME/io-base*" | sort > /tmp/io-home-after.txt
   echo "  主目录里比装之前多的（前 3 层，不算 ~/tools 里的）："; comm -13 $B/home.txt /tmp/io-home-after.txt | grep -v "^$HOME/tools" | sed "s#$HOME#~#; s/^/    /"
+
+  step "工具包自己要用的系统软件包都还在，也没被当成「用不着的」（3-34）"
+  for p in $KEEP; do
+    s=$(dpkg-query -W -f '${db:Status-Abbrev}' $p 2>/dev/null)
+    must "[ \"${s:0:2}\" = ii ]" "$p 装着（${s:-没装}）"
+  done
+  must "command -v git >/dev/null && git --version >/dev/null" "git 能用"
+  orphan=$(apt-get -s autoremove 2>/dev/null | awk '/^(Remv|Purg) /{print $2}' | tr '\n' ' ')
+  echo "  系统现在当成「用不着、可以清掉」的软件包：${orphan:-无}；手动装的里有：$(apt-mark showmanual | grep -x -e git -e curl | tr '\n' ' ')"
+  must "! echo \" $orphan \" | grep -qw -e git -e git-man -e curl -e wget -e iptables -e uidmap -e dbus-user-session" \
+    "里面没有工具包要用的（以后系统清理用不着的软件包时也不会删掉它们）"
+
+  if [ $KIND = docker-ce ]; then
+    step "docker-ce 另看：软件源、钥匙文件、apt 下载过的官方源索引、containerd"
+    must "! grep -rqs download.docker.com /etc/apt/sources.list /etc/apt/sources.list.d" "软件源里没有指向 download.docker.com 的了"
+    must "[ ! -e /etc/apt/keyrings/docker.asc ]" "钥匙文件 /etc/apt/keyrings/docker.asc 删了"
+    must "! apt-cache policy docker-ce containerd.io 2>/dev/null | grep -q download.docker.com" "apt 里看不到官方源的 docker-ce、containerd.io 了"
+    for p in /var/lib/containerd /etc/containerd /opt/containerd /run/containerd /etc/cni /var/lib/docker /etc/docker; do
+      must "! sudo test -e $p" "$p 没了"
+    done
+    must "! getent group docker >/dev/null" "用户组 docker 删了"
+    lists=$(ls /var/lib/apt/lists | grep -c download.docker.com)
+    echo "  apt 下载过的官方源索引（/var/lib/apt/lists/download.docker.com_*）现在还有 $lists 个；执行一次 sudo apt-get update 看看："
+    sudo apt-get update > /tmp/io-update.log 2>&1; urc=$?
+    grep -i -e docker -e '^E:' -e '^W:' /tmp/io-update.log | sed 's/^/    /'
+    must "[ $urc = 0 ] && ! grep -qi -e download.docker.com -e '^E:' /tmp/io-update.log && ! ls /var/lib/apt/lists | grep -q download.docker.com" \
+      "apt-get update 正常、不再去连 download.docker.com，那几个索引随之清掉（系统每天自己更新软件列表时也一样）"
+  fi
 
   step "新开终端，不加 sudo 敲 docker"
   bash $SRC/tests/vm/migrate-io-guest.sh --look /tmp/io-end.txt; sed 's/^/  新开终端：/' /tmp/io-end.txt
@@ -193,7 +246,7 @@ EOF
   step "再清点一次：电脑上没有不在规定位置的 Docker 了"
   (cd $SRC && python3 -m machine.migrate.inventory --admin) > /tmp/io-inv-after.txt 2>&1
   head -8 /tmp/io-inv-after.txt | sed 's/^/  | /'
-  must "! grep -q 'docker.io' /tmp/io-inv-after.txt" "清点里没有 docker.io 了"
+  must "! grep -q '$KIND' /tmp/io-inv-after.txt" "清点里没有 $KIND 了"
   step "再执行一次 sop machine migrate"
   cd ~ && $SOP machine migrate < /dev/null > /tmp/io-run3.log 2>&1; rc3=$?
   tail -3 /tmp/io-run3.log | sed 's/^/  | /'

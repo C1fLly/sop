@@ -160,7 +160,12 @@ if NAME == 'apt-get':
         die('假的 apt-get：Q6 应该一个一个点名要卸的包，不该用 --autoremove')
     need_root('E: Could not open lock file /var/lib/dpkg/lock-frontend - open (13: Permission denied)')
     pkgs = [x for x in ARGS[ARGS.index(sub) + 1:] if not x.startswith('-')]
-    for n in pkgs:
+    for n in [x[:-1] for x in pkgs if x.endswith('+')]:      # 「包名+」：装着的标成手动装的（3-34）；没装的真 apt 会去装，这里不许
+        if n not in s['packages']:
+            die(f'假的 apt-get：{n} 没装，「{n}+」会去装它（Q6 不该这样）')
+        s['packages'][n]['auto'] = False
+        print(f'{n} set to manually installed.')
+    for n in [x for x in pkgs if not x.endswith('+')]:
         p = s['packages'].pop(n, None)
         if p is None:
             print(f"Package '{n}' is not installed, so not removed")

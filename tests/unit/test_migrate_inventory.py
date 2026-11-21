@@ -64,7 +64,9 @@ class FakeRun:
         if a[0] == 'dpkg-query':
             return self.text('dpkg' if a[1] == '-W' else 'dpkg-S')
         if a[0] == 'apt-get':
-            return self.text('autoremove-base' if a[2] == 'autoremove' else 'purge-sim')
+            if a[2] == 'autoremove':
+                return self.text('autoremove-base')
+            return self.text('purge-sim-keep' if any(x.endswith('+') for x in a) else 'purge-sim')
         if a[0] == 'apt-mark':
             return self.text('showauto')
         if a[0] == 'systemctl':
@@ -319,6 +321,43 @@ class TestSystemDocker(Base):
         self.assertEqual(len(d['images']), 3)
         self.assertEqual(len(d['volumes']), 3)
         self.assert_readonly(p)
+
+    def test_docker_ce_brought_git(self):
+        """3-34：像桌面版（本来没有 git）照官网装 docker-ce，git 作为它推荐的「自动装的」进来。工具包自己要用 git：
+        不算进随 Docker 一起卸的，它要的 git-man、liberror-perl 也不算；记进 keep_pkgs 和提醒。输出是虚拟机里取的原样。"""
+        self.ce_root()
+        over = {'purge-sim': (FX / 'ce/purge-sim-desktop.out').read_text(),
+                'purge-sim-keep': (FX / 'ce/purge-sim-desktop-keep.out').read_text()}
+        p = self.probe('ce', over=over)
+        d = inv.inventory(p, tools=[])['docker'][0]
+        pk = [w for k, w in self.residue(d) if k == 'package']
+        self.assertEqual(sorted(pk), ['containerd.io', 'docker-buildx-plugin', 'docker-ce', 'docker-ce-cli',
+                                      'docker-ce-rootless-extras', 'docker-compose-plugin', 'pigz'])
+        self.assertEqual(d['keep_pkgs'], ['git'])
+        self.assertEqual(d['removal_from'], 'apt-get 模拟')
+        self.assertTrue(any('git' in n and '手动装的' in n for n in d['notes']))
+        sims = [a for a in p.ran if a[:3] == ['apt-get', '-s', 'purge']]
+        self.assertEqual(len(sims), 2)
+        self.assertEqual(sims[1][-1], 'git+')                        # 第二次模拟把 git 标成要留的
+        self.assert_readonly(p)
+        self.assertIn('不卸它', inv.describe(inv.inventory(self.probe('ce', over=over), tools=[]), NOW))
+        # 反着试：去掉这一层（keep 为空）就会把 git 一起卸
+        gone, _, held = inv.removal(self.probe('ce', over=over), ['docker-ce'], keep=())
+        self.assertIn('git', gone)
+        self.assertEqual(held, [])
+        # 第二次模拟没成：只列 Docker 自己的几个，宁可少卸
+        over2 = dict(over, **{'purge-sim-keep': (100, '', 'E: 出错了')})
+        gone, how, held = inv.removal(self.probe('ce', over=over2), ['docker-ce', 'containerd.io'])
+        self.assertEqual((gone, held), (['containerd.io', 'docker-ce'], ['git']))
+        self.assertIn('没成', how)
+
+    def test_toolkit_pkgs_cover_tools_toml(self):
+        """TOOLKIT_PKGS 至少有 machine/tools.toml 里「apt:」那几样和免管理员 Docker 要的 iptables。"""
+        from machine import catalog
+        apt = {t.install.split(':', 1)[1] for t in catalog.load(REPO / 'machine' / 'tools.toml')
+               if (t.install or '').startswith('apt:')}
+        self.assertTrue(apt)
+        self.assertLessEqual(apt | {'iptables'}, set(inv.TOOLKIT_PKGS))
 
     def test_sources_list_line_and_signed_by(self):
         """软件源写在 sources.list 里的一行、钥匙文件用 signed-by= 指的：都认得出。"""

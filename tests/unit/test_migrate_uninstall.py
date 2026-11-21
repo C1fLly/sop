@@ -17,7 +17,7 @@ from unittest import mock
 from machine.migrate import carry as C, flow, inventory as inv, record, uninstall as U
 from machine.migrate.dockercli import Daemon
 from tests.helpers import REPO
-from tests.unit.test_migrate_inventory import NOW, Base as InvBase, touch
+from tests.unit.test_migrate_inventory import FX, NOW, Base as InvBase, touch
 
 FAKES = REPO / 'tests' / 'fakes'
 FSYS = FAKES / 'system'
@@ -423,6 +423,49 @@ class SystemDocker(Q6Base):
         purge = next(x['args'] for x in self.changes() if x['cmd'] == 'apt-get')
         self.assertIn('containerd.io', purge)
         self.assertIn('卸完了', out)
+
+    def ce_desktop_inv(self, git_installed=True):
+        """3-34：像桌面版照官网装 docker-ce，git 是随它进来的「自动装的」（apt-get 模拟的输出是虚拟机里取的）。"""
+        self.ce_root()
+        over = {'purge-sim': (FX / 'ce/purge-sim-desktop.out').read_text(),
+                'purge-sim-keep': (FX / 'ce/purge-sim-desktop-keep.out').read_text()}
+        d = inv.inventory(self.probe('ce', over=over), tools=[])['docker'][0]
+        self.assertEqual(d['keep_pkgs'], ['git'])
+        self.seed_system(d, 'docker-ce')
+        if git_installed:
+            st = self.sys_state()
+            st['packages']['git'] = {'version': '1', 'status': 'ii', 'files': ['/usr/bin/git'], 'auto': True}
+            self.put_sys(st)
+            touch(self.root / 'usr/bin/git', '#!/bin/sh\n', 0o755)
+        return d
+
+    def test_docker_ce_keeps_toolkit_pkg(self):
+        """3-34：随 docker-ce 装进来的 git 不卸，和卸载同一次 apt 标成手动装的；确认那一屏、最后的提醒都说了。"""
+        d = self.ce_desktop_inv()
+        rc, out = self.q6(d)
+        self.assertEqual(rc, 0, out)
+        purge = [x['args'] for x in self.changes() if x['cmd'] == 'apt-get']
+        self.assertEqual(len(purge), 1)
+        self.assertIn('git+', purge[0])
+        self.assertNotIn('git', purge[0])
+        self.assertIn('docker-ce', purge[0])
+        st = self.sys_state()['packages']
+        self.assertIn('git', st)
+        self.assertFalse(st['git']['auto'])
+        self.assertTrue((self.root / 'usr/bin/git').exists())
+        self.assertNotIn('docker-ce', st)
+        self.assertIn('不卸的：git', out)
+        self.assertIn('工具包要用的 git 不卸、标成「手动装的」', out)
+        self.assertIn('卸完了', out)
+
+    def test_docker_ce_kept_pkg_gone_since_q1(self):
+        """Q1 之后小白自己把 git 卸了：Q6 不写「git+」（不然 apt 会去装它），照常卸 Docker。"""
+        d = self.ce_desktop_inv(git_installed=False)
+        rc, out = self.q6(d)
+        self.assertEqual(rc, 0, out)
+        purge = next(x['args'] for x in self.changes() if x['cmd'] == 'apt-get')
+        self.assertFalse(any(a.endswith('+') for a in purge), purge)
+        self.assertNotIn('git', self.sys_state()['packages'])
 
     def test_sources_list_line(self):
         """软件源写在 sources.list 里的：只删指向 download.docker.com 的那一行，别的行一字不动。"""

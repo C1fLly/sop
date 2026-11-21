@@ -187,7 +187,7 @@ def ai_tools(probe, roots, done):
         if r:
             out.append(_item('ai-tool', r, label, probe.show(hit),
                              f'{label} 装在旧的 {LABELS[r.tool]}（{r.shown}）里面，卸掉旧的它就跟着没了',
-                             f'卸之前先照 {label} 官方的装法重装一份（它不归工具包管，4.3）；没重装好之前先留着旧的'))
+                             f'卸之前先照 {label} 官方的装法重装一份（它不归工具包管，4.3）；没重装好之前先留着旧的', command=command))
             continue
         kind, interp = runtime(real)
         if kind == 'interp':
@@ -195,7 +195,7 @@ def ai_tools(probe, roots, done):
             if ir:
                 out.append(_item('ai-tool', ir, label, probe.show(hit),
                                  f'{label} 第一行写死了用旧的 {LABELS[ir.tool]} 里的 {probe.show(interp)} 运行，卸掉旧的它就打不开',
-                                 f'卸之前先照 {label} 官方的装法重装一份'))
+                                 f'卸之前先照 {label} 官方的装法重装一份', command=command))
             continue
         if kind not in ('node-env', 'launcher') or not old_node:
             continue
@@ -208,7 +208,7 @@ def ai_tools(probe, roots, done):
                          f'{label} 靠 Node 运行（{how}），用的是终端里找到的 Node；现在找到的是旧的 {probe.show(node)}，'
                          f'卸掉旧的之后，终端里要有规定位置那份 Node 它才能运行',
                          f'卸之前新开一个终端，确认 node 是 ~/tools/nvm 里的那份（M2 装好、终端启动文件里旧的几行删掉之后就是），'
-                         f'再打开一次 {label} 试试，能用了再卸', node=probe.show(node), how=kind))
+                         f'再打开一次 {label} 试试，能用了再卸', node=probe.show(node), how=kind, command=command))
     return out
 
 
@@ -296,7 +296,7 @@ def _packages(mods):
 def _global_item(root, pkg, bins, where, owner):
     cmd = f'（命令 {"、".join(bins)}）' if bins else ''
     fix = '规定位置那份 M2 会装，不用管' if pkg == 'pnpm' else '还要用就在规定位置那份里重装；不用了不用管'
-    return _item('global', root, pkg + cmd, where, f'{owner}全局装的，卸掉旧的就没了', fix, commands=bins)
+    return _item('global', root, pkg + cmd, where, f'{owner}全局装的，卸掉旧的就没了', fix, commands=bins, package=pkg)
 
 
 def contents(probe, roots):
@@ -352,7 +352,7 @@ def uv_tool_items(probe, roots, uv_tools):
         name = os.path.basename(d)
         cmd = f'（命令 {"、".join(cmds)}）' if cmds else ''
         out.append(_item('uv-tool', r, name + cmd, probe.show(d), '用旧的 uv 装的命令，卸掉旧的就没了',
-                         f'还要用就用规定位置那份 uv 重装：uv tool install {name}', commands=cmds))
+                         f'还要用就用规定位置那份 uv 重装：uv tool install {name}', commands=cmds, name=name))
     return out
 
 

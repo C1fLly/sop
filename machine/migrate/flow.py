@@ -1,7 +1,8 @@
-"""`sop machine migrate`：环境迁移 Q1 到 Q6（设计书 4.8；3-31、3-32）。Q6 里旧的 nvm、uv、pnpm 是 3-61，还没做好。
+"""`sop machine migrate`：环境迁移 Q1 到 Q6（设计书 4.8；3-31、3-32、3-61）。
 
   Q1 清点（inventory.py）→ Q2 规定位置的那一份装好没有（没装好的就是 M2 的安装）→ Q3 逐样选（默认都「留」）
   → Q4 备份并带走（carry.py，Q3 里选了带走的才有）→ Q5 核对 → Q6 卸载选了卸的 Docker（uninstall.py，再确认一次，默认不卸）
+  → 选了卸的旧 nvm、uv、pnpm（oldtools.py，同样再确认一次，默认不卸）
 
 规矩（4.8）：到小白最后确认卸载之前，旧的一样都不动；中途任何一步失败都只是停下，旧的照常可用。两处替用户定的（3-31，可否决）：
 
@@ -22,7 +23,7 @@ from kernel import paths
 from kernel.errors import SopError
 
 from .. import catalog, locate
-from . import carry as C, inventory, record, uninstall
+from . import carry as C, inventory, oldtools, record, uninstall
 from .dockercli import ADMIN, Daemon, first_line, new_daemon
 
 KEEP, DROP = 'keep', 'remove'
@@ -226,6 +227,10 @@ def choose(inv, s, now):
     for t in inv['tools']:
         for cp in t['copies']:
             say('')
+            if cp.get('inside'):         # 在另一份里面的（~/.nvm 里的 node）跟着外面那一份留或卸，不单独问
+                say(f'{t["name"]}：{cp["path"]} 在 {cp["inside"]} 里面，跟着它一起留或卸。')
+                out['tools'].append({'name': t['name'], 'path': cp['path'], 'choice': 'inside', 'inside': cp['inside']})
+                continue
             need = '要输管理员密码' if cp.get('admin') else '不用管理员密码'
             pick = ask.choose(f'{t["name"]}：{cp["path"]}（{cp.get("how_text", "")}；卸载{need}）。规定位置的那一份在 {t["location"]}：',
                               [(KEEP, '留着'), (DROP, '卸掉')], KEEP)
@@ -285,7 +290,8 @@ def summary(ch):
         L.append(f'  {c["label"]}：卸掉；带走数据卷 {len(carried)} 个、镜像 {imgs} 个'
                  + (f'；不要的数据卷 {"、".join(left)}（卸载时随旧的一起删掉）' if left else ''))
     for t in ch['tools']:
-        L.append(f'  {t["name"]} {t["path"]}：{"留着" if t["choice"] == KEEP else "卸掉"}')
+        what = f'跟着 {t.get("inside")}' if t['choice'] == 'inside' else '留着' if t['choice'] == KEEP else '卸掉'
+        L.append(f'  {t["name"]} {t["path"]}：{what}')
     return '\n'.join(L)
 
 
@@ -301,7 +307,7 @@ def _new_up(s, new):
 
 
 def migrate(*, ask, say=print, inv=None, probe=None, admin=False, backup_dir=None, q2_fn=q2, new=None,
-            system=_system, relist=_relist, sleep=time.sleep, free=None, machine=None):
+            system=_system, relist=_relist, sleep=time.sleep, free=None, machine=None, host=None):
     record.recover(say)
     with record.Running():
         probe = probe or inventory.Probe(admin=ADMIN if admin else None, notice=say)
@@ -325,7 +331,9 @@ def migrate(*, ask, say=print, inv=None, probe=None, admin=False, backup_dir=Non
             rc = _carry_all(inv, ch, s, backup_dir, new, free)
             if rc != 0:
                 return rc
-            return max(uninstall.q6(inv, ch, s, m=machine), _tools_hint(ch, say))
+            rc = uninstall.q6(inv, ch, s, m=machine)
+            host = host or oldtools.Host(probe, backup_dir=backup_dir)
+            return max(rc, oldtools.q6_tools(ch, s, host=host))
         finally:
             s.finish()
 
@@ -394,14 +402,6 @@ def _carry_all(inv, ch, s, backup_dir, new, free):
         return 0
     finally:
         new.close()
-
-
-def _tools_hint(ch, say):
-    drop = [f'{t["name"]} {t["path"]}' for t in ch['tools'] if t['choice'] == DROP]
-    if drop:
-        say('')
-        say(f'旧的 {"、".join(drop)}：卸载这一步还没做好（任务 3-61），现在照常在、照常能用。')
-    return 0
 
 
 def main(argv):

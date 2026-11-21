@@ -1,6 +1,6 @@
 """`sop machine …`：机器级的命令（设计书 4.5、8.5）。不在项目里也能用。
 
-第三段一样一样补：doctor（体检，3-06 做好了）、setup（安装，M2 到 M7 串起来，3-12 做好了）、migrate（环境迁移 Q1 到 Q5 是 3-31，Q6 卸载旧的 Docker 是 3-32；卸旧的 nvm、uv、pnpm 是 3-61）；clean 在第 3 期（W31）。
+第三段一样一样补：doctor（体检，3-06 做好了）、setup（安装，M2 到 M7 串起来，3-12 做好了）、migrate（环境迁移 Q1 到 Q5 是 3-31，Q6 卸载旧的 Docker 是 3-32，卸旧的 nvm、uv、pnpm 是 3-61）；clean 在第 3 期（W31）。
 """
 from . import catalog
 
@@ -18,7 +18,8 @@ HELP = '''sop machine 的用法：
   sop machine migrate   环境迁移：清点不在规定位置的工具，规定位置装好新的，旧的逐样选留还是卸（默认留）；
                         要卸的 Docker 里的数据卷、镜像逐样选带不带走，带走的先备份、试着还原、核对一致；
                         最后再确认一次才卸旧的 Docker，卸完逐项核对残留、把 docker 命令的默认指向切到新的。
-                        加 --admin 一开始就用管理员权限；--backup-dir <目录> 换备份位置。卸旧的 nvm、uv、pnpm 还没做好（3-61）'''
+                        选了卸的旧 nvm、uv、pnpm：删目录和终端启动文件里对应的几行（先备份），新开的终端核对过才删目录。
+                        加 --admin 一开始就用管理员权限；--backup-dir <目录> 换备份位置'''
 
 
 def show_tools():

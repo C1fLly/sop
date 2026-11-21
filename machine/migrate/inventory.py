@@ -466,7 +466,9 @@ def rootless_docker(probe):
     if 'dockerd' not in bins and 'rootlesskit' not in bins and 'dockerd-rootless.sh' not in bins:
         bins = []           # ~/bin 里只有个 docker 命令行之类的，不算一份免管理员的 Docker
     data = probe.h('.local/share/docker')
-    custom = data_root(probe, probe.h('.config/docker/daemon.json')) if (bins or unit_old) else None
+    conf_dir = probe.h('.config/docker')         # 免管理员那种自己的设置目录（daemon.json 等；规定位置那份不读它，3-35）
+    conf = parse_json(probe.read(f'{conf_dir}/daemon.json') or '')
+    custom = data_root(probe, f'{conf_dir}/daemon.json') if (bins or unit_old) else None
     if custom and custom.rstrip('/') == data:
         custom = None
     if not (bins or unit_old or probe.exists(data)):
@@ -489,6 +491,9 @@ def rootless_docker(probe):
         if e:
             res.append(e)
     res += [_residue('path', f'~/bin/{b}', admin=False) for b in bins]
+    e = _path_residue(probe, conf_dir, False, '旧的这份自己的设置，规定位置那份不读它')
+    if e:
+        res.append(e)
     if unit_old:
         res.append(_residue('path', probe.show(unit_f), admin=False, note='用户级后台服务 docker 的登记文件'))
         for extra in ('.config/systemd/user/docker.service.d', '.config/systemd/user/default.target.wants/docker.service'):
@@ -513,7 +518,14 @@ def rootless_docker(probe):
         'cli': _cli(probe, probe.h('bin/docker'), probe.p('/usr/bin/docker'), f'{probe.tools}/docker/bin/docker'),
         'running': running, 'needs_admin': False,
     }
-    if re.search(r'DOCKER_HOST|\$HOME/bin|~/bin', probe.read(probe.h('.bashrc')) or ''):
+    others = sorted(k for k in conf if k != 'data-root') if isinstance(conf, dict) else []
+    if others:
+        inst.setdefault('notes', []).append(
+            f'旧的这份在 ~/.config/docker/daemon.json 里有设置（{"、".join(others)}），规定位置那份不读它（它的设置在 '
+            '~/tools/docker/etc/daemon.json）；卸掉旧的时这个目录一起删，要用的设置先记下来')
+    # 官方安装脚本最后提示加的是写死主目录的 export PATH=/home/<账号>/bin:$PATH（3-35 在虚拟机里看到的），$HOME/bin、~/bin 也认
+    if re.search(r'DOCKER_HOST|(?:\$HOME|\$\{HOME\}|~|' + re.escape(probe.home.rstrip('/')) + r')/bin(?![\w./-])',
+                 probe.read(probe.h('.bashrc')) or ''):
         inst.setdefault('notes', []).append('~/.bashrc 里有照官方装法提示加的几行（PATH 加 ~/bin、DOCKER_HOST），卸载时一并看一下')
     return inst
 

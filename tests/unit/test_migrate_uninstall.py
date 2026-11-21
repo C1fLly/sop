@@ -523,6 +523,7 @@ class RootlessDocker(Q6Base):
         os.chmod(locked, 0o555)
         touch(h / 'bin/rootlesskit', f'#!/bin/sh\necho "$@" >> {self.tmp}/rootlesskit.log\nchmod -R u+w "$3" && exec "$@"\n', 0o755)
         touch(h / 'bin/my-script', '#!/bin/sh\n', 0o755)                 # 小白自己的，不是 Docker 的
+        touch(h / '.config/docker/daemon.json', '{"log-driver": "json-file"}\n')   # 旧的这份自己的设置（3-35）
         self.sop_host = f'unix://{self.rt}/sop-docker/docker.sock'
         tools_exec = f'{self.tools}/docker/bin/dockerd-rootless.sh'
         units = h / '.config/systemd/user'
@@ -549,6 +550,7 @@ class RootlessDocker(Q6Base):
         self.assertFalse((h / '.local/share/docker').exists())
         self.assertIn('rm -rf', (self.tmp / 'rootlesskit.log').read_text())     # 自己删不掉，借 rootlesskit 删的
         self.assertEqual(sorted(os.listdir(h / 'bin')), ['my-script'])
+        self.assertFalse((h / '.config/docker').exists())                     # 旧的这份自己的设置目录一起删了（3-35）
         apparmor = self.root / f'etc/apparmor.d/{str(h).lstrip("/").replace("/", ".")}.bin.rootlesskit'
         self.assertFalse(apparmor.exists())
         self.assertTrue(any(x['cmd'] == 'apparmor_parser' and x['sudo'] for x in self.syslog()))

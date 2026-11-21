@@ -455,6 +455,32 @@ class TestRootless(Base):
         self.assert_readonly(p)
         self.assertIn('免管理员的 Docker，但不在规定位置', inv.describe(r, NOW))
 
+    def test_rootless_config_dir_and_bashrc_written_out(self):
+        """3-35 虚拟机里看到的：官网装法的设置文件 ~/.config/docker/daemon.json 要列进残留（规定位置那份不读它，留着就是残留），
+        里面的设置提醒一句；官方安装脚本提示加进 ~/.bashrc 的是写死主目录的 export PATH=/home/<账号>/bin:$PATH，也要认出来。"""
+        self.rootless_home()
+        h = self.uhome
+        touch(h / '.config/docker/daemon.json', json.dumps({'log-driver': 'json-file', 'log-opts': {'max-size': '10m'}}))
+        touch(h / '.bashrc', f'# ~/.bashrc\nexport PATH={h}/bin:$PATH\n')
+        d = inv.inventory(self.probe('rootless'), tools=[])['docker'][0]
+        res = self.residue(d)
+        self.assertEqual(res[0], ('path', '~/.local/share/docker'))               # 还是先删数据
+        self.assertIn(('path', '~/.config/docker'), res)
+        self.assertLess(res.index(('path', '~/bin/dockerd')), res.index(('path', '~/.config/docker')))
+        self.assertFalse(next(r for r in d['residue'] if r['what'] == '~/.config/docker').get('data'))
+        self.assertTrue(any('~/.bashrc' in n for n in d['notes']), d.get('notes'))
+        self.assertTrue(any('log-driver、log-opts' in n and '规定位置那份不读它' in n for n in d['notes']), d.get('notes'))
+        self.assertIn('~/.config/docker', inv.describe({'docker': [d], 'tools': []}, NOW))
+
+    def test_rootless_bashrc_without_old_lines(self):
+        """~/.bashrc 里只有规定位置的 PATH（~/tools/docker/bin、~/.local/bin）这类：不提醒。没有 daemon.json：不列 ~/.config/docker。"""
+        self.rootless_home()
+        h = self.uhome
+        touch(h / '.bashrc', f'export PATH="{h}/tools/docker/bin:$HOME/.local/bin:~/bin2:$PATH"\n')
+        d = inv.inventory(self.probe('rootless'), tools=[])['docker'][0]
+        self.assertFalse(any('~/.bashrc' in n for n in d.get('notes', [])), d.get('notes'))
+        self.assertNotIn(('path', '~/.config/docker'), self.residue(d))
+
     def test_rootless_custom_data_root(self):
         """免管理员那份在 ~/.config/docker/daemon.json 里另指了数据目录：先删它（和默认的数据目录一样排在程序前面）。"""
         self.rootless_home()

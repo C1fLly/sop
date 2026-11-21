@@ -27,6 +27,8 @@ import os
 import pathlib
 import sys
 
+from kernel import paths
+
 from .shellenv import ShellEnvError, apply, read_text, write_text
 
 SOURCE = pathlib.Path(__file__).resolve().parent / 'global-rules.md'
@@ -131,6 +133,7 @@ def state_of(path, text_block=None):
 
 def install(out=print):
     """M7：往各工具的全局规则文件里写这一段。返回 (都成没有, [大白话])。一个文件不成不影响别的文件。"""
+    paths.guard_home('安装全局规则（M7）')
     b = block()
     ok, msgs = True, []
     for t in targets():

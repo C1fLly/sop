@@ -249,6 +249,7 @@ def setup_tool(name, *, ask=input, secret=getpass.getpass, say=print, environ=No
 
 
 def setup(*, ask=input, secret=getpass.getpass, say=print, environ=None, adapters=None):
+    paths.guard_home('登录 AI 工具（M4：会真调一次 AI）')
     out = [setup_tool(n, ask=ask, secret=secret, say=say, environ=environ, adapter=(adapters or {}).get(n)) for n in TOOLS]
     return Result(all(t.ok for t in out), out)
 

@@ -33,6 +33,8 @@ import socket
 import subprocess
 import sys
 
+from kernel import paths
+
 from . import config, shellenv
 
 HOST = 'github.com'
@@ -256,6 +258,7 @@ def login_argv():
 
 def setup(env=None, *, say=print, stdio=None):
     """M3 的引导：做完再跑出口检查。返回 Result。stdio：gh 网页登录那两步的输出往哪写（测试用；平常直接在终端里）。"""
+    paths.guard_home('登录 GitHub（M3：~/.ssh、~/.gitconfig）')
     env = env or environ()
     res = check(env)
     if res.ok:

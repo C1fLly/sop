@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 
+from tests import safehome
 from tests.helpers import REPO, TMP_ROOT, TempHome
 
 FAKES = REPO / 'tests' / 'fakes'
@@ -377,3 +378,24 @@ class TestStepFails(SetupCase):
         self.assertOk(r)
         self.assertIn('M2 安装工具：已经合格，跳过', r.stdout)
         self.assertIn('M3 登录 GitHub：做好了', r.stdout)
+
+
+class TestForgotHome(SetupCase):
+    def test_forgot_home_is_refused(self):
+        """3-59：测试漏设了 HOME（主目录是测试进程那个公用的假主目录，3-12 出事时这里是本机真的主目录）。
+        别的都齐了、照样能装，sop machine setup 还是一开头就停下：什么都不装、不登录、不写进度，公用的假主目录一样都没变。"""
+        env = {**self.env, 'HOME': os.environ[safehome.MARK], safehome.MARK: os.environ[safehome.MARK]}
+        del env['XDG_CONFIG_HOME']
+        shared = self.snapshot(safehome.SHARED_HOME)
+        before = self.snapshot(self.user_home, self.tools, self.home)
+        self.env = env
+        r = self.setup()
+        self.assertEqual(r.returncode, 1, r.stdout[-3000:] + r.stderr[-2000:])
+        self.assertIn('自测的保险：sop machine setup', r.stdout)
+        self.assertIn('公用的假主目录', r.stdout)
+        self.assertNotIn('【第 1 步', r.stdout)
+        self.assertEqual(self.installs(), [])
+        self.assertEqual(self.lines('sudo.log'), [])
+        self.assertFalse((self.home / 'config' / 'setup.json').exists())
+        self.assertEqual(self.snapshot(safehome.SHARED_HOME), shared)
+        self.assertEqual(self.snapshot(self.user_home, self.tools, self.home), before)

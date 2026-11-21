@@ -7,6 +7,7 @@ import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
+import tests  # noqa: E402,F401  自测的保险（3-59）：先换成假主目录，再跑任何测试（只跑总检查时也一样）
 
 
 def run_suite(name):

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from kernel import paths
 from machine import components, config, space
 from tests.helpers import TempHome, mock_env
+from tests.safehome import REAL_HOME
 
 GB = space.GB
 
@@ -228,7 +229,7 @@ class TestComponents(TempHome):
 
     def test_this_computer_read_only(self):
         """在跑测试的这台电脑上只读地查一遍：五样都有值；记进的是临时根目录，不是真的 ~/tools/sop/config。"""
-        with mock_env({'SOP_TOOLS_DIR': os.path.expanduser('~/tools')}):
+        with mock_env({'SOP_TOOLS_DIR': str(REAL_HOME / 'tools')}):
             c = components.collect()
         self.assertEqual(set(c), set(config.SYSTEM_PARTS))
         self.assertTrue(all(isinstance(v, str) and v for v in c.values()))

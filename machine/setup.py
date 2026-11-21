@@ -202,7 +202,9 @@ def _say(*args):
 
 
 def run(*, recheck=False, say=_say, steps=STEPS):
-    """执行一遍。返回退出码：0 都通过，1 有一步没通过，3 另一个正在跑，130 中途按了 Ctrl+C。"""
+    """执行一遍。返回退出码：0 都通过，1 有一步没通过，3 另一个正在跑，130 中途按了 Ctrl+C。
+    自测的保险（3-59）：主目录是真的、环境却像在自测里，一开头就抛 paths.HomeGuard，什么都不做（连进度、锁都不写）。"""
+    paths.guard_home('sop machine setup')
     fd, who = _lock()
     if fd is None:
         say(f'另一个窗口正在执行 sop machine setup（进程 {who.get("pid", "?")}，{who.get("since", "?")} 开始）。'
@@ -272,7 +274,11 @@ def main(argv):
     if argv not in ([], ['--recheck']):
         print(USAGE)
         return 2
-    return run(recheck=bool(argv))
+    try:
+        return run(recheck=bool(argv))
+    except paths.HomeGuard as e:
+        print(e)
+        return 1
 
 
 if __name__ == '__main__':

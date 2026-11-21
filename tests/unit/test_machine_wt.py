@@ -10,9 +10,10 @@ import unittest
 
 from machine import catalog, install, wtsetup
 from tests.helpers import REPO, TMP_ROOT, TempHome, mock_env, rmtree, sh
+from tests.safehome import REAL_HOME
 
 WT_SH = REPO / 'machine' / 'install' / 'wt.sh'
-LOCAL_WT = pathlib.Path.home() / 'tools' / 'wt'
+LOCAL_WT = REAL_HOME / 'tools' / 'wt'       # 本机真的那份，只读地克隆（测试进程的 HOME 是假的，3-59）
 FAKE_WT = '#!/bin/bash\nWT_VERSION="{v}"\ncase $1 in --version) printf "wt %s\\n" "$WT_VERSION" ;; *) exit 3 ;; esac\n'
 FAKE_GH = ('#!/bin/sh\necho "$*" >> "$FAKEGH_LOG"\n'
            'case "$1" in --version) echo "gh version 2.83.0 (2025-11-01)" ;; auth) exit "${FAKEGH_AUTH:-0}" ;; esac\n')

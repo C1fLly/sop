@@ -157,6 +157,8 @@ def write_text(target, text, mode):
 
 def install_block(rc=None, tools_dir=None, net=None):
     """把那一段写进终端启动文件（平常是 ~/.bashrc）。内容没变就不写（文件的修改时间也不动）。返回改没改。"""
+    if not rc:
+        paths.guard_home('往 ~/.bashrc 写工具包那一段')     # 自测的保险（3-59）：给了别的文件就是调用的人自己定的
     rc = pathlib.Path(rc) if rc else rc_file()
     target = pathlib.Path(os.path.realpath(rc))    # 是链接（管点文件的工具常这么做）就写到它指的那个文件
     text, mode = read_text(target, '终端启动文件')

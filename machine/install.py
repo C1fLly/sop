@@ -83,6 +83,7 @@ def install_tool(tool, *, env=None, out=None):
     kind, script = tool.install_kind()
     if kind != 'script':
         return r, f'{tool.name}：要用系统的软件包 {script} 装，还没装上'
+    paths.guard_home(f'安装 {tool.name}')          # 自测的保险（3-59）：安装脚本会往主目录里写（Docker 的用户级服务登记等）
     p = subprocess.run(['bash', str(script)], env=script_env() if env is None else env,
                        stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT if out else None)
     after = catalog.run_check(tool)
@@ -97,6 +98,7 @@ def install_tool(tool, *, env=None, out=None):
 
 def install(names=MINE, out=None, *, run=subprocess.run):
     """按清单里的先后装这几样，一样不成就停。用系统软件包装的几样先合成一次装（要管理员密码）。返回 (全成没有, [大白话])。"""
+    paths.guard_home('安装基础工具（M2）')
     tools = catalog.load()
     unknown = set(names) - {t.name for t in tools}
     if unknown:

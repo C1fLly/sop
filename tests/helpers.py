@@ -1,4 +1,5 @@
-"""自测共用的小工具：每个测试一个 /tmp 下的临时根目录，SOP_HOME、运行时目录都指过去。"""
+"""自测共用的小工具：每个测试一个 /tmp 下的临时根目录，SOP_HOME、运行时目录、主目录（HOME、XDG_*）都指过去。
+整个测试进程在导入 tests 时已经换成了公用的假主目录（safehome.py，3-59）。"""
 import contextlib
 import os
 import pathlib
@@ -8,8 +9,10 @@ import sys
 import tempfile
 import unittest
 
+from . import safehome
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
-TMP_ROOT = pathlib.Path(os.environ.get('SOP_TEST_TMP', '/tmp/sop-test'))
+TMP_ROOT = safehome.TMP_ROOT
 GIT_ID = {'GIT_AUTHOR_NAME': 'tester', 'GIT_AUTHOR_EMAIL': 'tester@example.invalid',
           'GIT_COMMITTER_NAME': 'tester', 'GIT_COMMITTER_EMAIL': 'tester@example.invalid'}
 
@@ -37,7 +40,13 @@ class TempHome(unittest.TestCase):
         self.tmp = pathlib.Path(tempfile.mkdtemp(prefix=f'{type(self).__name__}-', dir=TMP_ROOT))
         self.home = self.tmp / 'sop-home'
         self.home.mkdir()
-        self._env = mock_env({'SOP_HOME': str(self.home), 'SOP_RUNTIME_DIR': str(self.tmp / 'run')})
+        # 自测的保险（3-59）：主目录也默认是这个测试自己的临时目录（测试要另设的照样可以设），XDG_* 跟着它
+        self.test_home = self.tmp / 'test-home'
+        xdg = {k: str(self.test_home / sub) for k, sub in safehome.XDG.items()}
+        for d in xdg.values():
+            os.makedirs(d)
+        safehome.write_gitconfig(self.test_home)
+        self._env = mock_env({'SOP_HOME': str(self.home), 'SOP_RUNTIME_DIR': str(self.tmp / 'run'), 'HOME': str(self.test_home), **xdg})
         self._env.__enter__()
 
     def tearDown(self):

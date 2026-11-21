@@ -1,10 +1,13 @@
 """3-04：体检的分区判断（设计书 4.3）。用造出来的 lsblk、findmnt 输出测，不碰这台电脑的磁盘。"""
 import json
+import pathlib
 import shutil
 import subprocess
 import unittest
 
-from machine import disks
+from machine import disks, space
+
+FAKES = pathlib.Path(__file__).resolve().parent.parent / 'fakes' / 'disks'
 
 
 def dev(name, type_, fstype=None, mounts=(), children=(), tran=None, rm=False, path=None):
@@ -194,6 +197,31 @@ class TestCollect(unittest.TestCase):
         def missing(cmd, **kw):
             raise FileNotFoundError(cmd[0])
         self.assertEqual(disks.collect(home='/home/u', run=missing).kind, 'unknown')
+
+    def test_real_outputs_from_vm(self):
+        """3-37：虚拟机里真造出来的几种（tests/vm/disks.sh），lsblk、findmnt 的原样输出走一遍 collect()，
+        结论要和当时在虚拟机里判的一样；剩余空间那边「是不是同一个文件系统」按真的来源名判。"""
+        files = sorted(FAKES.glob('vm-*.json'))
+        self.assertEqual(len(files), 7)
+        seen = set()
+        for f in files:
+            with self.subTest(f.stem):
+                d = json.loads(f.read_text())
+                run = FakeRun(d['lsblk'], {'/': d['root_source'], '/home/xiaobai': d['home_source']})
+                lay = disks.collect(home='/home/xiaobai', run=run)
+                got = {'kind': lay.kind, 'root': lay.root, 'home': lay.home,
+                       'others': [o['path'] for o in lay.others], 'notes': lay.notes}
+                self.assertEqual(got, d['expect'])
+                seen.add(lay.kind)
+                # 两边设备号不一样时，按来源名判：btrfs 子卷算同一个，两个逻辑卷不算
+                stat = lambda p: type('S', (), {'st_dev': 1 if p == '/' else 2})()
+                same = space.same_filesystem('/', '/home/xiaobai', run=run, stat=stat)
+                self.assertEqual(same, f.stem == 'vm-btrfs-two-subvolumes' or d['root_source'] == d['home_source'])
+        self.assertEqual(seen, {'single', 'extra', 'separate', 'unknown'})
+        # 加密加两个逻辑卷、btrfs 两个子卷：系统和主目录底下都是同一个分区，不会判成「主目录不在系统盘上」
+        for stem, base in (('vm-luks-two-lvs', '/dev/vdb1'), ('vm-btrfs-two-subvolumes', '/dev/vdb2')):
+            e = json.loads((FAKES / f'{stem}.json').read_text())['expect']
+            self.assertEqual((e['root'], e['home']), ([base], [base]))
 
     @unittest.skipUnless(shutil.which('lsblk') and shutil.which('findmnt'), '没有 lsblk、findmnt')
     def test_this_computer_read_only(self):

@@ -1,0 +1,115 @@
+{
+ "说明": "3-37 在虚拟机 dk37 里真跑出来的（tests/vm/disks.sh 的「4-加密没打开」），lsblk -J 和 findmnt 的原样输出",
+ "lsblk": {
+  "blockdevices": [
+   {
+    "name": "sr0",
+    "path": "/dev/sr0",
+    "type": "rom",
+    "fstype": null,
+    "tran": "sata",
+    "rm": true,
+    "mountpoints": []
+   },
+   {
+    "name": "vda",
+    "path": "/dev/vda",
+    "type": "disk",
+    "fstype": null,
+    "tran": "virtio",
+    "rm": false,
+    "mountpoints": [],
+    "children": [
+     {
+      "name": "vda1",
+      "path": "/dev/vda1",
+      "type": "part",
+      "fstype": "ext4",
+      "tran": "virtio",
+      "rm": false,
+      "mountpoints": [
+       "/"
+      ]
+     },
+     {
+      "name": "vda13",
+      "path": "/dev/vda13",
+      "type": "part",
+      "fstype": "ext4",
+      "tran": "virtio",
+      "rm": false,
+      "mountpoints": [
+       "/boot"
+      ]
+     },
+     {
+      "name": "vda14",
+      "path": "/dev/vda14",
+      "type": "part",
+      "fstype": null,
+      "tran": "virtio",
+      "rm": false,
+      "mountpoints": []
+     },
+     {
+      "name": "vda15",
+      "path": "/dev/vda15",
+      "type": "part",
+      "fstype": "vfat",
+      "tran": "virtio",
+      "rm": false,
+      "mountpoints": [
+       "/boot/efi"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "vdb",
+    "path": "/dev/vdb",
+    "type": "disk",
+    "fstype": null,
+    "tran": "virtio",
+    "rm": false,
+    "mountpoints": [],
+    "children": [
+     {
+      "name": "vdb1",
+      "path": "/dev/vdb1",
+      "type": "part",
+      "fstype": "crypto_LUKS",
+      "tran": "virtio",
+      "rm": false,
+      "mountpoints": []
+     },
+     {
+      "name": "vdb2",
+      "path": "/dev/vdb2",
+      "type": "part",
+      "fstype": "btrfs",
+      "tran": "virtio",
+      "rm": false,
+      "mountpoints": []
+     }
+    ]
+   }
+  ]
+ },
+ "root_source": "/dev/vda1",
+ "home_source": "/dev/vda1",
+ "expect": {
+  "kind": "extra",
+  "root": [
+   "/dev/vda1"
+  ],
+  "home": [
+   "/dev/vda1"
+  ],
+  "others": [
+   "/dev/vdb2"
+  ],
+  "notes": [
+   "/dev/vdb1 是加密的、没打开，看不出里面是什么，没算进去"
+  ]
+ }
+}

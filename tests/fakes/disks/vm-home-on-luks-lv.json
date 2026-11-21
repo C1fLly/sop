@@ -1,0 +1,146 @@
+{
+ "说明": "3-37 在虚拟机 dk37 里真跑出来的（tests/vm/disks.sh 的「6-主目录在加密逻辑卷」），lsblk -J 和 findmnt 的原样输出",
+ "lsblk": {
+  "blockdevices": [
+   {
+    "name": "sr0",
+    "path": "/dev/sr0",
+    "type": "rom",
+    "fstype": null,
+    "tran": "sata",
+    "rm": true,
+    "mountpoints": []
+   },
+   {
+    "name": "vda",
+    "path": "/dev/vda",
+    "type": "disk",
+    "fstype": null,
+    "tran": "virtio",
+    "rm": false,
+    "mountpoints": [],
+    "children": [
+     {
+      "name": "vda1",
+      "path": "/dev/vda1",
+      "type": "part",
+      "fstype": "ext4",
+      "tran": "virtio",
+      "rm": false,
+      "mountpoints": [
+       "/"
+      ]
+     },
+     {
+      "name": "vda13",
+      "path": "/dev/vda13",
+      "type": "part",
+      "fstype": "ext4",
+      "tran": "virtio",
+      "rm": false,
+      "mountpoints": [
+       "/boot"
+      ]
+     },
+     {
+      "name": "vda14",
+      "path": "/dev/vda14",
+      "type": "part",
+      "fstype": null,
+      "tran": "virtio",
+      "rm": false,
+      "mountpoints": []
+     },
+     {
+      "name": "vda15",
+      "path": "/dev/vda15",
+      "type": "part",
+      "fstype": "vfat",
+      "tran": "virtio",
+      "rm": false,
+      "mountpoints": [
+       "/boot/efi"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "vdb",
+    "path": "/dev/vdb",
+    "type": "disk",
+    "fstype": null,
+    "tran": "virtio",
+    "rm": false,
+    "mountpoints": [],
+    "children": [
+     {
+      "name": "vdb1",
+      "path": "/dev/vdb1",
+      "type": "part",
+      "fstype": "crypto_LUKS",
+      "tran": "virtio",
+      "rm": false,
+      "mountpoints": [],
+      "children": [
+       {
+        "name": "dm_crypt-0",
+        "path": "/dev/mapper/dm_crypt-0",
+        "type": "crypt",
+        "fstype": "LVM2_member",
+        "tran": null,
+        "rm": false,
+        "mountpoints": [],
+        "children": [
+         {
+          "name": "ubuntu--vg-ubuntu--lv",
+          "path": "/dev/mapper/ubuntu--vg-ubuntu--lv",
+          "type": "lvm",
+          "fstype": "ext4",
+          "tran": null,
+          "rm": false,
+          "mountpoints": []
+         },
+         {
+          "name": "ubuntu--vg-home--lv",
+          "path": "/dev/mapper/ubuntu--vg-home--lv",
+          "type": "lvm",
+          "fstype": "ext4",
+          "tran": null,
+          "rm": false,
+          "mountpoints": [
+           "/home"
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "name": "vdb2",
+      "path": "/dev/vdb2",
+      "type": "part",
+      "fstype": "btrfs",
+      "tran": "virtio",
+      "rm": false,
+      "mountpoints": []
+     }
+    ]
+   }
+  ]
+ },
+ "root_source": "/dev/vda1",
+ "home_source": "/dev/mapper/ubuntu--vg-home--lv",
+ "expect": {
+  "kind": "separate",
+  "root": [
+   "/dev/vda1"
+  ],
+  "home": [
+   "/dev/vdb1"
+  ],
+  "others": [
+   "/dev/vdb2"
+  ],
+  "notes": []
+ }
+}

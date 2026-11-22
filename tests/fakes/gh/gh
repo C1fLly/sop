@@ -24,6 +24,10 @@
     还没核实被挡时到底记成什么，这里按官方说的「失败」）。
   流程沙箱里 World 自己造的仓库（db 里没有 checks）照旧：快档、全档一律成功，剧本可以改。
 
+3-42 加的（sop self report 用）：`issue create --repo <所有者>/<名> --title … --body-file <文件或 ->`，不管有没有仓库都收，
+记进 $FAKEGH_HOME/issues.json，打出问题单的网址；`issue list --repo …` 列出来。真 GitHub 上建 issue 不用仓库的写权限，
+所以这里不查仓库在不在。auth.json 里有 "token" 时 `auth token` 打出它（真 gh 从自己的登记里读，不联网）。
+
 3-10 加的（M3 登录 GitHub 用）：$FAKEGH_HOME/auth.json 存在时，登录状态按它来（不存在时照旧：一律「登录了」）：
 - auth.json：{"logged_in": 真假, "scopes": [...], "ssh_keys": [公钥原文...], "calls": [记下的 auth、ssh-key 命令]}；
 - `auth status`：登录了照真 gh 的样子列账号、协议、权限（Token scopes），退出码 0；没登录时那句原话、退出码 1；
@@ -294,6 +298,8 @@ def main(args):
             return r
     elif args[:2] == ['auth', 'status']:
         print('✓ Logged in to github.com (fake)'); return 0
+    if args[:1] == ['issue']:
+        return issue_cmd(args)
     if args[:1] == ['api'] and api_parse(args, read_body=False)[1] == 'user':
         out({'login': LOGIN, 'id': USER_ID, 'name': os.environ.get('FAKEGH_NAME', '')}, args); return 0
     if not os.path.exists(DB):
@@ -433,7 +439,11 @@ def auth_cmd(args):
         a['scopes'] = sorted(set(a.get('scopes', []) + scopes_opt()))
         save()
         print('✓ Authentication complete.', file=sys.stderr); return 0
-    if not a.get('logged_in') and args[:1] in (['api'], ['ssh-key'], ['repo'], ['pr']):
+    if cmd == ['auth', 'token']:
+        if not a.get('logged_in') or not a.get('token'):
+            print('no oauth token found for github.com', file=sys.stderr); return 1
+        print(a['token']); return 0
+    if not a.get('logged_in') and args[:1] in (['api'], ['ssh-key'], ['repo'], ['pr'], ['issue']):
         print('To get started with GitHub CLI, please run:  gh auth login', file=sys.stderr); return 4
     if args[:1] == ['api'] and api_parse(args, read_body=False)[1] == 'meta':
         out({'ssh_keys': HOST_KEYS, 'verifiable_password_authentication': False}, args); return 0
@@ -449,6 +459,36 @@ def auth_cmd(args):
         save()
         print('✓ Public key added to your account', file=sys.stderr); return 0
     return None
+def issue_cmd(args):
+    """issue create / issue list（3-42）。"""
+    f = os.path.join(HOME, 'issues.json')
+    issues = json.load(open(f)) if os.path.exists(f) else []
+    repo = opt(args, '--repo') or opt(args, '-R') or os.environ.get('GH_REPO')
+    if not repo:
+        print('fake gh: 要 --repo', file=sys.stderr); return 1
+    if args[:2] == ['issue', 'list']:
+        out([i for i in issues if i['repo'] == repo], args); return 0
+    if args[:2] != ['issue', 'create']:
+        print(f'fake gh: 不认识的命令 {" ".join(args)}', file=sys.stderr); return 1
+    title = opt(args, '--title') or opt(args, '-t')
+    bf = opt(args, '--body-file') or opt(args, '-F')
+    body = opt(args, '--body') or opt(args, '-b')
+    if bf is not None:
+        body = sys.stdin.read() if bf == '-' else open(bf, encoding='utf-8').read()
+    if not title or body is None:
+        print('must provide `--title` and `--body` (or `--fill` or `--web`) when not running interactively', file=sys.stderr); return 1
+    if len(body) > 65536:
+        print('GraphQL: Body is too long (maximum is 65536 characters) (createIssue)', file=sys.stderr); return 1
+    n = len([i for i in issues if i['repo'] == repo]) + 1
+    issues.append({'repo': repo, 'number': n, 'title': title, 'body': body, 'url': f'https://github.com/{repo}/issues/{n}'})
+    tmp = f + '.tmp'
+    with open(tmp, 'w') as fh:
+        json.dump(issues, fh, ensure_ascii=False, indent=1)
+    os.replace(tmp, f)
+    print(f'\nCreating issue in {repo}\n', file=sys.stderr)
+    print(f'https://github.com/{repo}/issues/{n}'); return 0
+
+
 VALUE_OPTS = ('-X', '--method', '-F', '--field', '-f', '--raw-field', '--input', '--jq', '-q', '-H', '--header', '--json')
 
 

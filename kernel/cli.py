@@ -164,6 +164,9 @@ def main(argv):
         if argv[:2] == ['project', 'clone']:    # 换了电脑、继续旧项目（4.6、4.7）
             from . import projectclone
             return projectclone.cli(argv[2:])
+        if argv[:2] == ['self', 'report']:      # 工具包自己的问题登记到工具包仓库（16.5）；在不在项目里都能用
+            from . import selfreport
+            return selfreport.cli(argv[2:])
         p = Project(find_root(os.getcwd()))
         if not argv:
             return run_engine(p)

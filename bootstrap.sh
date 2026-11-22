@@ -29,7 +29,8 @@ GITHUB_URL=${SOP_BOOTSTRAP_GITHUB:-https://github.com/}
 ETC_ENV=${SOP_BOOTSTRAP_ETC_ENV:-/etc/environment}
 OS_RELEASE=${SOP_BOOTSTRAP_OS_RELEASE:-/etc/os-release}
 SUDO_PROMPT='[sudo] 请输入 %u 的登录密码：'
-NO_NET='可以问一下懂网络的人这台电脑上网用的代理地址，再重新执行这一步；完全连不上外网的，用离线包（小白手册「完全连不上网」那一节）'
+OFFLINE_URL='https://github.com/C1fLly/sop/releases/latest'   # 离线包挂在工具包仓库的 Releases 上（3-51）
+NO_NET="可以问一下懂网络的人这台电脑上网用的代理地址，再重新执行这一步。完全连不上外网的，用离线包：在另一台能上网的电脑上打开 $OFFLINE_URL ，下载 sop-offline-（一串字母数字）-amd64.sh 这个文件，用 U 盘拷到这台电脑，在终端里执行 bash <这个文件>（小白手册「完全连不上网」那一节）"
 PROXY_RE='^https?://[^[:space:]/:]+(:[0-9]{1,5})?/?$'   # 只认网页代理：系统自带的 wget 不支持 socks
 
 # ---------- 等住软件包的锁（3-56）：和 machine/install/apt.sh 一字不差（单元测试核对），这里要单独运行所以抄一份 ----------

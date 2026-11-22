@@ -42,6 +42,7 @@ def probe(argv):
         'kernel.cli.init_project': 'init_project',
         'kernel.projectnew.cli': 'project new', 'kernel.projectclone.cli': 'project clone', 'kernel.selfreport.cli': 'self report',
         'kernel.version.install': 'version.install', 'kernel.version.upgrade': 'version.upgrade',
+        'kernel.version.rollback': 'version.rollback',
         'machine.cli.show_tools': 'machine tools', 'machine.doctor.main': 'machine doctor',
         'machine.setup.main': 'machine setup', 'machine.migrate.flow.main': 'machine migrate',
     }

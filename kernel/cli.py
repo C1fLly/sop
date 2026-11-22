@@ -167,6 +167,9 @@ def main(argv):
         if argv[:2] == ['self', 'report']:      # 工具包自己的问题登记到工具包仓库（16.5）；在不在项目里都能用
             from . import selfreport
             return selfreport.cli(argv[2:])
+        if argv[:2] == ['self', 'rollback']:    # 退回上一个版本（7.11、16.5）；不在项目里时退项目外面用的版本
+            from . import version
+            return version.rollback(argv[2:], os.getcwd())
         p = Project(find_root(os.getcwd()))
         if not argv:
             return run_engine(p)

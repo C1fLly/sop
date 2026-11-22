@@ -68,6 +68,21 @@ class Workflow(unittest.TestCase):
         self.assertEqual(set(re.findall(r'secrets\.([A-Za-z0-9_]+)', self.code)), {'WT_DEPLOY_KEY'})
         self.assertEqual(self.code.count('persist-credentials: false'), self.code.count('actions/checkout@'))
 
+    def test_host_keys_fetched_with_token(self):
+        """3-63：取 GitHub 主机钥匙的接口不带凭据会按共用地址限次数被拒（403），要用这次检查自带的只读 github.token。"""
+        js = jobs(self.code)
+        for name in ('unit', 'sandbox'):
+            self.assertRegex(js[name], r'(?m)^          GITHUB_TOKEN: \$\{\{ github\.token \}\}$', name)
+        for name in ('checks', 'docs'):
+            self.assertNotIn('GITHUB_TOKEN', js[name], f'{name} 不取钥匙，不给凭据')
+        code = '\n'.join(l for l in PREPARE.read_text(encoding='utf-8').split('\n') if not l.lstrip().startswith('#'))
+        i = code.index('https://api.github.com/meta')
+        self.assertIn('Authorization: Bearer %s', code[i - 300:i])
+        self.assertIn('-K -', code[i - 100:i], '凭据经标准输入给 curl，不放在命令行上')
+        self.assertIn('unset GITHUB_TOKEN', code[i:], '取完钥匙就去掉凭据')
+        self.assertLess(i, code.index('machine/install/wt.sh'))
+        self.assertLess(code.index('unset GITHUB_TOKEN'), code.index('machine/install/wt.sh'))
+
 
 class RunAllParts(unittest.TestCase):
     def test_unknown_part_refused(self):

@@ -80,10 +80,16 @@ key=$HOME/.ssh/id_ed25519
 [ ! -e "$key" ] || die "$key 已经有了，不盖掉它"
 trap 'rm -f "$key"' EXIT
 ( umask 077; printf '%s\n' "$WT_DEPLOY_KEY" > "$key" )
-# GitHub 的主机钥匙从它的接口（HTTPS）取，不用 ssh-keyscan 盲信第一次连上的
-curl -fsSL --retry 5 --retry-all-errors https://api.github.com/meta \
+# GitHub 的主机钥匙从它的接口（HTTPS）取，不用 ssh-keyscan 盲信第一次连上的。
+# 带上这次检查自带的只读临时凭据 GITHUB_TOKEN（流程文件给的 github.token）：不带凭据的接口调用按来源地址限次数
+# （每小时 60 次），临时电脑的地址是很多人共用的，3-63 碰上过 403（合并后 main 上 sandbox 红在这里）。
+# 凭据经标准输入给 curl（不出现在命令行里），用完就从环境里去掉，后面的安装、测试看不到它。
+[ -n "${GITHUB_TOKEN:-}" ] || die "没给 GITHUB_TOKEN（流程文件里准备电脑那一步的 env 要有 GITHUB_TOKEN: \${{ github.token }}）"
+printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" \
+  | curl -fsSL --retry 5 --retry-all-errors -K - https://api.github.com/meta \
   | python3 -c 'import json, sys; [print("github.com", k) for k in json.load(sys.stdin)["ssh_keys"]]' >> "$HOME/.ssh/known_hosts" \
   || die "取不到 GitHub 的主机钥匙"
+unset GITHUB_TOKEN
 SOP_TOOLS=$HOME/tools SOP_WT_VERSION=$WT_VERSION SOP_WT_REPO=${SOP_CI_WT_REPO:-git@github.com:C1fLly/wt.git} \
   bash "$repo/machine/install/wt.sh"
 rm -f "$key"

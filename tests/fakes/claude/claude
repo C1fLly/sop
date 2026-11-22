@@ -10,6 +10,9 @@
   fake://slow     睡 30 秒
   fake://leak     报错里带着密钥原文（看适配器会不会去掉）
   fake://noskill  正常，但「加载技能」时会话日志里不记那一条（模仿升级后日志的样子变了，3-29）
+  fake://reject   正常，但 sop self check 的复查（任务里写着 /sop/out/review.json）结论是「有问题」（3-44；别的正常的几种写「通过」）
+  fake://mangled  正常，但复查的结果文件不是 JSON（3-44）
+  fake://noreview 正常，但不写复查的结果文件（3-44）
   https://<上面几种>.fake.invalid 也一样（3-10：M4 只收 http(s) 开头的地址）
 程序名里带 old 的，--help 里少了 --max-budget-usd（模仿升级后改了用法）。
 每次 -p 调用在 $CLAUDE_CONFIG_DIR/projects/<工作目录改写>/<会话编号>.jsonl 留一行：收到的参数、环境变量的名字、状态目录里的设置。
@@ -126,6 +129,15 @@ def turn(msg, extra=None):
         with open('/sop/out/result.json', 'w') as fh:
             json.dump({'status': 'done', 'commits': [], 'commands': [], 'deviations': [], 'questions': [],
                        'findings': [{'text': '假的发现', 'blocking': False}]}, fh, ensure_ascii=False)
+    if '/sop/out/review.json' in msg and os.path.isdir('/sop/out') and mode not in ('quota', 'noreview') and loaded is not False:
+        with open('/sop/out/review.json', 'w') as fh:     # 3-44：sop self check 的复查
+            if mode == 'mangled':
+                fh.write('结论：通过（不是 JSON）')
+            elif mode == 'reject':
+                json.dump({'结论': '有问题', '理由': ['假的复查：看了 diff'],
+                           '问题': [{'文件': 'x.py', '说明': '假的问题：删掉了一个测试'}]}, fh, ensure_ascii=False)
+            else:
+                json.dump({'结论': '通过', '理由': ['假的复查：看了 diff，没发现问题'], '问题': []}, fh, ensure_ascii=False)
     return ans
 
 

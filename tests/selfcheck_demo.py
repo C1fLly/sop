@@ -57,6 +57,10 @@ CASES = {
                                        '用法：uv run python -m runner.selftest [--keep]（3-44 演示改的一行）')],
                           'ok', True, '破坏演练：还没有（3-47 还没做'),
 }
+# 每一种情形「卡在哪」应当只有这几样（report.json 里 ok 是 False 的那几项，按顺序）。
+# 文档检查失败时总检查也不过：总检查的 doc_refs/pass-toolkit 样例查的就是工具包自己的文档
+STUCK = {'全好': [], '单元测试失败': ['单元测试'], '总检查失败': ['总检查'], '文档检查失败': ['总检查', '文档检查'],
+         '复查有问题': ['复查'], '动了隔离没加isolation': ['隔离自检和破坏演练'], '动了隔离加了isolation': ['破坏演练']}
 
 
 def g(d, *a):
@@ -128,7 +132,13 @@ json.dump(r, open({str(base / "report.json")!r}, 'w'), ensure_ascii=False, inden
     last = next((x for x in reversed(out.splitlines()) if x.startswith('最后一句：')), '（没跑完）' + out[-300:])
     ok = want in last and (last == '最后一句：过了') == (want == '过了')
     try:
-        logdir = json.loads((base / 'report.json').read_text())['logdir']
+        rep = json.loads((base / 'report.json').read_text())
+        # 3-64：「卡在哪」只能是预期的那几样（3-44 那几遍前面多带了「单元测试没过」，只看有没有那几个字看不出来）
+        bad = [it['name'] for it in rep['items'] if it['ok'] is False]
+        if bad != STUCK[name]:
+            ok = False
+            out += f'\n（卡在哪的是 {bad}，预期只有 {STUCK[name]}）'
+        logdir = rep['logdir']
         if ok:          # 和预期不一样的留着记录目录看
             shutil.rmtree(logdir, ignore_errors=True)
         else:

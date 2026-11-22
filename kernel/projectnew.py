@@ -254,10 +254,13 @@ def toolkit_source(toolkit=TOOLKIT):
 
 
 def git_identity():
-    """Git 的提交身份设了没有（名字、邮箱都要有；3-22 发现新电脑上没人设，3-10 设）。"""
+    """Git 的提交身份设了没有（名字、邮箱都要有；3-22 发现新电脑上没人设，3-10 设）。
+
+    在根目录读（和 machine/ghsetup.py 一样）：新项目的第一次提交只看得到全局和系统的设置，
+    不能被当前目录所在仓库自己的设置蒙过去（3-41：工具包仓库的 .git/config 里设了身份之后发现的）。"""
     import subprocess
     from .gitx import clean_env
-    got = [subprocess.run(['git', 'config', '--get', k], capture_output=True, text=True, env=clean_env(),
+    got = [subprocess.run(['git', '-C', '/', 'config', '--get', k], capture_output=True, text=True, env=clean_env(),
                           stdin=subprocess.DEVNULL).stdout.strip() for k in ('user.name', 'user.email')]
     return all(got)
 

@@ -30,6 +30,10 @@ uv run python tests/run_all.py
 
 不给部分就跑四样：单元测试 `unit`、流程沙箱 `sandbox`、总检查 `checks`、文档检查 `docs`（设计书里的章节号、步骤编号没有悬空；设计书和各 README 里写的 `sop …` 在命令表 `kernel/commands.py` 里、写的仓库里的路径存在，`checks/doc_refs/`），也可以只给其中几样。`--no-skip`：有测试被跳过就算没通过。
 
+**修完工具包之后的把关（3-44）**：`sop self check [--repo <开发目录>] [--base <起点>] [--isolation]`（代码 `kernel/selfcheck.py`）。在开发目录里把这四样一样一样跑完（命令和 GitHub 上的一样），再请另一个模型（Claude Code，只读放法）复查相对起点的改动，动了隔离、放行事件、事件日志三处的还要加 `--isolation` 跑隔离自检（会起专用 Docker）和破坏演练；最后一句只说「过了」或「没过，卡在哪」。`tests/selfcheck_demo.py` 在 `/tmp` 的副本上造几种没过的改动验它（手动跑，不花钱）；真调 AI 复查的是 `tests/real_ai/selfcheck_review.py`。
+
+**破坏演练（3-47，设计书 16.3）**：`python3 tests/drill.py`（`--list` 看有哪几项、`--only a,b` 只演几项）。逐项做破坏动作：改掉一个测试的预期结果并提交、把测试标成跳过、去掉检查流程的 `--no-skip`、把检查样例的预期改反、改技能副本、文档写一个不存在的路径、PR 上改受保护文件不放行、改 wt 钩子和特权侧要用的另外几个文件、AI 改了可改范围外的文件；每一项先确认没破坏时检查通过，破坏后屏幕上必须是「检查失败（拦住了）」而且原因就是这次破坏，再还原、又通过。全部拦住退出码 0（`sop self check --isolation` 按这个找它）。破坏只在 `/tmp` 里现拷的副本、现建的主目录、假远程、假 gh 上做，开发目录只读，`~/tools/wt` 只读克隆一份用；全跑一遍不到一分钟。`tests/drill_reverse.py` 反着试：把每一道检查改弱，对应那一项必须变成「没拦住」（手动跑，一两分钟）。
+
 工具包仓库放到 GitHub 上以后，`.github/workflows/check.yml` 把这四样分成同名的四个检查各跑一遍（3-40；单元测试、流程沙箱带 `--no-skip`）；跑检查的临时电脑由 `tests/ci/prepare.sh` 准备（只在 GitHub 上跑，本机不要跑）。隔离自检、真实 AI 演练只在本机跑。
 
 uv 只用系统自带的 Python（`pyproject.toml` 里禁止它另外下载）。所有测试都在 `/tmp` 下的临时目录里做，不碰 `~/tools/sop/state`、`~/tools/sop/config`。

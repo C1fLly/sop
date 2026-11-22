@@ -7,7 +7,12 @@
 - 断网时写不了，流程停下，不在本地攒着（Y4）。
 - 本机记远程日志到哪儿的指针是 refs/sop/journal，不放在 refs/remotes/origin/ 下：wt 拉取时（git fetch --all）会改
   refs/remotes/origin/ 下的所有指针，两边同时改一个指针，wt 那边就报「incorrect old value」停下（3-53）。
-  所以取回加 --refmap=、推送直接推到远程地址，Git 不会顺手去改 refs/remotes/origin/sop/journal；那个指针只归 wt。
+  所以 Git 也不能顺手去改 refs/remotes/origin/sop/journal，那个指针只归 wt：
+  - 取回加 --refmap=（不然 Git 按 origin 的拉取规则顺手改它）；
+  - 推送不用 origin 这个名字（用名字推送，Git 按 origin 的拉取规则顺手改它），也不能光写 origin 的地址：
+    Git 2.56 起，推送目标是地址时，Git 会找地址对得上的那个已配置远程，照样按它的拉取规则改（3-63a）。
+    所以推到一个只在这一条命令里用 -c 现定义的远程 PUSH_REMOTE：只给地址、不给拉取规则，Git 没有指针可改；
+    仓库的配置里不留它。
 
 文件的放法：
   events/project/<纳秒时间>-<随机>.json          项目级的事件
@@ -31,6 +36,7 @@ from .gitx import Git, GitError
 BRANCH = 'sop/journal'
 REF = f'refs/heads/{BRANCH}'
 TRACK = 'refs/sop/journal'     # 不放在 refs/remotes/origin/ 下，见上
+PUSH_REMOTE = 'sop-journal-push'   # 推送时现定义的远程，只给地址、不给拉取规则，见上
 WHO = {'GIT_AUTHOR_NAME': 'sop', 'GIT_AUTHOR_EMAIL': 'sop@localhost', 'GIT_COMMITTER_NAME': 'sop',
        'GIT_COMMITTER_EMAIL': 'sop@localhost'}
 
@@ -101,10 +107,16 @@ class Journal:
         self.retries = 0         # 被抢先重来了几次
 
     def push_url(self):
-        """推送直接用远程地址，不用 origin 这个名字：用名字推送，Git 会顺手更新 refs/remotes/origin/sop/journal（见文件开头）。"""
+        """origin 的推送地址（按 Git 自己的规则展开，insteadOf 也算进去）。"""
         if self._url is None:
             self._url = self.git('remote', 'get-url', '--push', 'origin')
         return self._url
+
+    def _push(self, refspec, *opts, check=True):
+        """推送到 PUSH_REMOTE：这一条命令里现定义、地址就是 origin 的推送地址、没有拉取规则，
+        Git 推完不会顺手改 refs/remotes/ 下的任何指针（见文件开头）。"""
+        return self.git.run('-c', f'remote.{PUSH_REMOTE}.url={self.push_url()}', 'push', '-q', *opts, PUSH_REMOTE, refspec,
+                            check=check)
 
     # ---------- 建立 ----------
     def init_branch(self):
@@ -114,7 +126,7 @@ class Journal:
             return
         empty = self.git('hash-object', '-t', 'tree', '-w', '--stdin', input='')
         c = self.git('commit-tree', empty, '-m', '建立日志分支', env=WHO)
-        self.git('push', '-q', self.push_url(), f'{c}:{REF}')
+        self._push(f'{c}:{REF}')
         self.git('update-ref', TRACK, c)
 
     # ---------- 读 ----------
@@ -287,7 +299,7 @@ class _Writer(threading.Thread):
             self.j.pushes += 1
             if self.j._die_at is not None and self.j.pushes >= self.j._die_at:
                 os._exit(137)    # 测试用：模拟 sop 在推送之前被强制结束
-            p = g.run('push', '-q', '--porcelain', self.j.push_url(), f'{commit}:{REF}', check=False)
+            p = self.j._push(f'{commit}:{REF}', '--porcelain', check=False)
             if p.returncode == 0:
                 g.run('update-ref', TRACK, commit, check=False)   # 本机另一个进程同时在更新也没关系，下次取回会补上
                 break

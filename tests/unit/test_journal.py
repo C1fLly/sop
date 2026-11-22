@@ -139,6 +139,37 @@ class TestWtFetch(JournalCase):
         self.assertEqual(fails[:3], [], f'拉取 {n[0]} 次里失败 {len(fails)} 次')
         self.assertEqual(len(self.j.read(['project'])), 80)
 
+    def test_push_target_has_no_fetch_refspec(self):
+        """3-63a：Git 2.56 起，推送目标写成地址时，Git 会找地址对得上的那个已配置远程（origin），照它的拉取规则
+        顺手更新 refs/remotes/origin/sop/journal（上面两项在 GitHub 的临时电脑上就是这样不过的）。本机的 Git 旧，
+        看不出来，所以这里不看结果、直接核对每次推送的目标：是这一条命令里用 -c 现定义的远程，只给地址、不给拉取规则；
+        不是 origin，也不是光秃秃的地址。建日志分支（I6）和写入线程两处推送都算。"""
+        remote, gitdir = make_remote_and_clone(self.tmp / 'fresh')     # 新项目：两处推送都要看到
+        url = subprocess.run(['git', '--git-dir', str(gitdir), 'remote', 'get-url', '--push', 'origin'],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        j = J.Journal(gitdir)
+        pushes, real = [], j.git.run
+
+        def spy(*args, **kw):
+            if 'push' in args:
+                pushes.append([str(a) for a in args])
+            return real(*args, **kw)
+        j.git.run = spy
+        try:
+            j.init_branch()
+            j.append(J.event('project', 'P0', 'done'))
+        finally:
+            j.close()
+        self.assertEqual(len(pushes), 2, pushes)
+        for a in pushes:
+            i = a.index('push')
+            conf = dict(a[k + 1].split('=', 1) for k in range(i) if a[k] == '-c')
+            target = next(x for x in a[i + 1:] if not x.startswith('-'))
+            self.assertNotIn(target, ('origin', url), a)
+            self.assertEqual(conf.get(f'remote.{target}.url'), url, a)
+            self.assertNotIn(f'remote.{target}.fetch', conf, a)
+        self.assertEqual([e['step'] for e in J.Journal(gitdir).read(['project'])], ['P0'])   # 推上去了
+
 
 class TestReleases(JournalCase):
     def test_seq_and_latest(self):

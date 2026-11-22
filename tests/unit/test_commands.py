@@ -40,8 +40,10 @@ def probe(argv):
         'kernel.cli.run_engine': 'run_engine', 'kernel.cli.status': 'status', 'kernel.cli.show_cost': 'cost',
         'kernel.cli.feature_new': 'feature_new', 'kernel.cli.feature_drop': 'feature_drop',
         'kernel.cli.init_project': 'init_project',
-        'kernel.projectnew.cli': 'project new', 'kernel.projectclone.cli': 'project clone',
+        'kernel.projectnew.cli': 'project new', 'kernel.projectclone.cli': 'project clone', 'kernel.selfreport.cli': 'self report',
+        'kernel.selfcheck.cli': 'self check',
         'kernel.version.install': 'version.install', 'kernel.version.upgrade': 'version.upgrade',
+        'kernel.version.rollback': 'version.rollback',
         'machine.cli.show_tools': 'machine tools', 'machine.doctor.main': 'machine doctor',
         'machine.setup.main': 'machine setup', 'machine.migrate.flow.main': 'machine migrate',
     }

@@ -14,6 +14,8 @@
 #   - 只读权限（contents: read），不碰 GitHub 上别的东西；取代码时不把凭据留在 .git/config 里（persist-credentials: false）。
 #   - 这里没有任何真的密钥。唯一用到的机密是 WT_DEPLOY_KEY：一把只能读私有仓库 C1fLly/wt 的部署钥匙，
 #     由用户在 GitHub 网页上建（3-41），只给「准备电脑」那一步，装完 wt 就删。
+#   - 「准备电脑」那一步（unit、sandbox）另给这次检查自带的只读临时凭据 github.token，只用来取 GitHub 的 SSH 主机钥匙
+#     （不带凭据的接口调用按来源地址限次数，临时电脑共用地址会被拒，3-63），取完就从环境里去掉。
 #   - 触发方式只有推送、PR（pull_request，不是 pull_request_target）和手动；别人从分叉仓库发来的 PR 拿不到机密，
 #     会停在准备那一步（工具包仓库只收自己的改动，不收外人的 PR）。
 #   - 第三方 Action 只用了 GitHub 官方的 actions/checkout，钉死到提交编号（不是会被挪动的版本标签），
@@ -52,6 +54,7 @@ jobs:
         run: tests/ci/prepare.sh
         env:
           WT_DEPLOY_KEY: ${{ secrets.WT_DEPLOY_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
       - name: 内核单元测试
         run: uv run python tests/run_all.py --no-skip unit
 
@@ -67,6 +70,7 @@ jobs:
         run: tests/ci/prepare.sh
         env:
           WT_DEPLOY_KEY: ${{ secrets.WT_DEPLOY_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
       - name: 流程沙箱
         run: uv run python tests/run_all.py --no-skip sandbox
 

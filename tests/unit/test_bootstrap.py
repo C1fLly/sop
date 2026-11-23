@@ -244,6 +244,7 @@ class TestFullRun(Bootstrap):
         r = self.run_bs(input='\n', FAKE_NEED_PROXY='http://nowhere:1')
         self.assertNotEqual(r.returncode, 0)
         self.assertIn('离线包', r.stderr)
+        self.assertIn('https://github.com/C1fLly/sop/releases/latest', r.stderr)   # 3-51：离线包的下载地址
         self.assertFalse((self.h / 'tools/sop').exists())
         r = self.run_bs('--yes', FAKE_NEED_PROXY='http://nowhere:1')
         self.assertNotEqual(r.returncode, 0)

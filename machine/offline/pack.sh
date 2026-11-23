@@ -14,6 +14,12 @@
 #
 # 下载的东西都放在 /tmp 下的临时目录，做完删掉。apt 的索引和下载缓存也放在那里（不用系统的、不上锁、不用 sudo）。
 # 选项：--repo（或 SOP_TOOLKIT_REPO）工具包仓库；--out 打到哪；SOP_UV_VERSION 指定 uv 版本（不给就是最新的）。
+#
+# 发版（3-51）：离线包挂在 GitHub 上工具包仓库的 Releases（https://github.com/C1fLly/sop/releases/latest，
+# bootstrap.sh 连不上网时指向它），不进 Git 仓库。步骤见 docs/第三段/3-51-离线包挂到Releases.md「以后发版」：
+#   tests/vm/offline.sh --repo https://github.com/C1fLly/sop.git --save <本机目录>   在虚拟机里打、验、另存一份
+#   查离线包里没有本机私人信息 → gh release create offline-<提交前 8 位> --target <提交> … →
+#   tests/vm/offline.sh --url <Releases 上的下载地址> --sha256 <校验值>                验下下来的那份
 set -uo pipefail
 
 PKGS=(git curl)
